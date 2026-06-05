@@ -1,0 +1,9 @@
+Project: Client Dashboard Launch
+
+Meeting Notes - June 4
+
+The team discussed that finance approval is still pending. Because of this, the launch cannot happen this Friday. The team agreed to delay the launch to next Friday.
+
+Ramesh will follow up with the finance team and update the Jira due date. Akash said the frontend work is almost complete, but deployment should not start until finance approval is received.
+
+Priya mentioned that client success should be informed about the delay before Friday.

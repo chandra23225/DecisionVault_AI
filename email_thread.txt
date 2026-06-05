@@ -1,0 +1,7 @@
+Subject: Client Dashboard Launch Approval
+
+Finance Team: Budget approval is still under review. We cannot confirm approval today.
+
+Project Manager: Since finance approval is pending, we will delay the client dashboard launch by one week. Ramesh will follow up and update the project tracker.
+
+Client Success Team: Please inform us once the revised launch date is confirmed.

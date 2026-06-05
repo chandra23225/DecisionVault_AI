@@ -1,0 +1,52 @@
+[
+  {
+    "decision": "The Client Dashboard launch will be delayed by one week, targeting next Friday.",
+    "decision_type": "Timeline Change",
+    "reason": "Finance budget approval is still pending and has not been confirmed, making a launch this Friday unfeasible.",
+    "owner": "Project Manager / Project Team (represented by Ramesh)",
+    "approver": "The team collectively agreed to this delay.",
+    "affected_project_or_workflow": "Client Dashboard Launch",
+    "dependencies_or_conditions": [],
+    "follow_up_actions": [
+      "Ramesh will follow up with the finance team regarding the budget approval.",
+      "Ramesh will update the project tracker and Jira due date to reflect the new launch target.",
+      "The Client Success Team must be informed about the revised launch date before the original Friday launch date."
+    ],
+    "source_evidence": [
+      "Project Manager: Since finance approval is pending, we will delay the client dashboard launch by one week. (email_thread.txt)",
+      "The team agreed to delay the launch to next Friday. (meeting_notes.txt)",
+      "Ramesh: Agreed. Let's push launch to next Friday. (slack_thread.txt)",
+      "Priya: Then we should not launch this Friday. (slack_thread.txt)",
+      "Ramesh will follow up and update the project tracker. (email_thread.txt)",
+      "Ramesh will follow up with the finance team and update the Jira due date. (meeting_notes.txt)",
+      "Priya mentioned that client success should be informed about the delay before Friday. (meeting_notes.txt)",
+      "Priya: Please update Jira and inform client success. (slack_thread.txt)"
+    ],
+    "confidence": "High",
+    "reusable_context": "This decision is a reactive adjustment to a critical external blocker (pending financial approval) impacting a project timeline. It highlights the importance of managing dependencies for project success.",
+    "decision_id": "DV-001",
+    "saved_at": "2026-06-05 11:04:21",
+    "status": "Active"
+  },
+  {
+    "decision": "Deployment activities for the Client Dashboard will be paused.",
+    "decision_type": "Deployment Condition",
+    "reason": "Finance budget approval is pending, and deployment should not proceed without it.",
+    "owner": "Akash",
+    "approver": "Implied standard procedure or team consensus for critical dependencies.",
+    "affected_project_or_workflow": "Client Dashboard Deployment Workflow",
+    "dependencies_or_conditions": [
+      "Finance budget approval must be officially received and confirmed before deployment can commence."
+    ],
+    "follow_up_actions": [],
+    "source_evidence": [
+      "Akash said the frontend work is almost complete, but deployment should not start until finance approval is received. (meeting_notes.txt)",
+      "Akash: I will wait before starting deployment. (slack_thread.txt)"
+    ],
+    "confidence": "High",
+    "reusable_context": "This decision reflects a risk mitigation strategy where a critical process step (deployment) is explicitly halted until a mandatory prerequisite (financial approval) is met, preventing potential rework or wasted effort.",
+    "decision_id": "DV-002",
+    "saved_at": "2026-06-05 11:04:21",
+    "status": "Active"
+  }
+]

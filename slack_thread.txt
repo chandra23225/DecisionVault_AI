@@ -1,0 +1,6 @@
+Akash: Frontend is mostly done from my side.
+Ramesh: We are still blocked because finance has not approved the budget.
+Priya: Then we should not launch this Friday.
+Ramesh: Agreed. Let's push launch to next Friday.
+Priya: Please update Jira and inform client success.
+Akash: I will wait before starting deployment.
