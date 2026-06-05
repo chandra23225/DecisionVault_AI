@@ -41,6 +41,36 @@ st.warning(
     "Gemini/API setup is approved for that use."
 )
 
+with st.sidebar:
+    st.header("MVP Positioning")
+    st.write(
+        "DecisionVault AI is an out-of-the-box decision memory layer for messy "
+        "workplace communication."
+    )
+
+    st.markdown("### Why now")
+    st.markdown(
+        "- Teams make decisions across meetings, chat, email, and docs\n"
+        "- Summaries often miss ownership, approvals, and decision rationale\n"
+        "- AI agents need reusable context, not scattered conversation history"
+    )
+
+    st.markdown("### Best-fit use cases")
+    st.markdown(
+        "- Launch and timeline decisions\n"
+        "- Vendor or tooling choices\n"
+        "- Approval dependencies\n"
+        "- Incident follow-ups\n"
+        "- Project handoffs and onboarding"
+    )
+
+    st.markdown("### MVP status")
+    st.success("Ready for demos with anonymized real-world style data")
+    st.caption(
+        "Production use would need authentication, team workspaces, database "
+        "storage, and approved data governance."
+    )
+
 
 # =========================
 # API Setup

@@ -6,6 +6,22 @@ Instead of only summarizing meetings, DecisionVault AI extracts what was decided
 
 ![DecisionVault AI overview](assets/decisionvault-overview.jpg)
 
+## Product Positioning
+
+DecisionVault AI is designed as an out-of-the-box decision memory MVP:
+
+```text
+messy workplace communication -> structured decision records -> searchable decision vault
+```
+
+It is not just a meeting summarizer. The product focuses on durable business context that teams and AI agents can reuse later.
+
+## Why This Matters Now
+
+Modern teams make decisions across meetings, Slack-style threads, email, project notes, incident reviews, and planning documents. The decision itself often gets buried, while the reasoning, owner, approver, and dependencies become difficult to recover later.
+
+DecisionVault AI addresses that gap by turning unstructured communication into reusable decision records with source evidence and confidence levels.
+
 ## What It Does
 
 - Extracts structured business decisions from meeting notes, Slack-style threads, emails, project notes, and CSV/text exports
@@ -15,6 +31,20 @@ Instead of only summarizing meetings, DecisionVault AI extracts what was decided
 - Prevents simple duplicate saves
 - Exports current and saved records as CSV or Excel
 - Flags ambiguous items for human review
+
+## What Makes The GenAI Focus Different
+
+DecisionVault AI uses GenAI to interpret messy human communication and identify decisions that are not always written in a clean format. The focus is on extracting:
+
+- the actual business choice
+- the reason behind it
+- owner and approver context
+- dependencies and conditions
+- source evidence
+- confidence level
+- reusable context for future teams or AI agents
+
+This makes the app more decision-memory oriented than a generic summarizer.
 
 ## Saved Decision Vault
 
@@ -109,6 +139,24 @@ This version intentionally avoids real Slack, Jira, Gmail, or document managemen
 ```text
 messy workplace text -> structured decision records -> saved searchable vault
 ```
+
+Current MVP capabilities:
+
+- upload `.txt`, `.md`, and `.csv` files
+- extract decision records with Gemini
+- save records locally in `decision_vault.json`
+- search current records and saved vault records
+- prevent simple duplicate saves
+- export CSV and Excel files
+- review low-confidence or ambiguous items
+
+Not production-ready yet:
+
+- no authentication or team workspaces
+- no production database
+- no enterprise access controls
+- no live Slack, Jira, Gmail, or document integrations
+- no formal compliance or data retention controls
 
 ## Privacy Note
 
