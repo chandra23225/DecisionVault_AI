@@ -1,0 +1,31 @@
+Meeting: Checkout Modernization Decision Review
+Date: 2026-05-28
+Participants: Product Lead, Engineering Manager, Finance Partner, QA Lead
+
+The team agreed to delay the checkout modernization release by two weeks. The original release date was June 7, but the new target is June 21.
+
+Reason:
+Finance approval for the new payment routing contract is still pending. QA also found intermittent failures in the refund reconciliation flow during staging tests.
+
+Decision:
+The release will be delayed until finance approval is complete and QA signs off on refund reconciliation.
+
+Owner:
+Product Lead will coordinate the revised launch plan.
+
+Approver:
+Engineering Manager approved the delay during the meeting.
+
+Follow-up actions:
+- Finance Partner will confirm approval status by June 3.
+- QA Lead will rerun refund reconciliation tests by June 5.
+- Product Lead will update the release calendar and notify support.
+
+Dependencies:
+- Finance approval must be completed.
+- Refund reconciliation tests must pass in staging.
+- Support team needs the revised launch date before customer communications go out.
+
+Evidence:
+"We should not ship the routing change without finance approval."
+"Let's move the launch by two weeks and use the time to close QA findings."

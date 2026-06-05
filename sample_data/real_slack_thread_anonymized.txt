@@ -1,0 +1,23 @@
+#channel: project-ops
+Date: 2026-05-30
+
+Product Lead:
+The finance approval for the payment routing contract is still not complete. Do we keep the June 7 launch or move it?
+
+Engineering Manager:
+Given the QA refund issue and finance dependency, I recommend moving the checkout modernization launch to June 21.
+
+QA Lead:
+Agree. Refund reconciliation is passing most tests, but there are still failures when partial refunds are retried.
+
+Finance Partner:
+I can commit to a finance decision by June 3, but not before then.
+
+Engineering Manager:
+Decision: launch moves to June 21. Product Lead owns the release update. QA Lead owns refund test completion. Finance Partner owns approval confirmation.
+
+Support Lead:
+Please give support the revised customer message once the release calendar is updated.
+
+Product Lead:
+Confirmed. I will update the release calendar today and send the support note after finance confirms.

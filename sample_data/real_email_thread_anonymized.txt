@@ -1,0 +1,24 @@
+Subject: Decision Needed: Vendor B for Analytics Migration
+
+From: Data Platform Lead
+To: Engineering Manager, Procurement Partner, Security Reviewer
+Date: 2026-05-24
+
+We need to choose between Vendor A and Vendor B for the analytics migration. Vendor A is cheaper, but their security review is incomplete and the support SLA is unclear.
+
+From: Security Reviewer
+Date: 2026-05-25
+
+Vendor B has completed the security questionnaire and supports SSO, audit logs, and regional data residency. I recommend Vendor B if the migration timeline is the priority.
+
+From: Procurement Partner
+Date: 2026-05-25
+
+Vendor B is within the approved budget if we use the annual plan. Procurement can complete the contract by June 4.
+
+From: Engineering Manager
+Date: 2026-05-26
+
+Decision approved: choose Vendor B for the analytics migration. The reason is stronger security readiness and lower timeline risk. Data Platform Lead owns migration planning. Procurement Partner owns contract completion by June 4. Security Reviewer owns final access-control validation.
+
+This affects the Analytics Migration workflow. Dependency: contract must be completed before production data export begins.

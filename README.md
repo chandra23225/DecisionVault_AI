@@ -69,6 +69,15 @@ For a quick demo, upload these files together:
 
 Then click **Generate Decision Memory**.
 
+For a more realistic workplace-style demo, upload files from `sample_data/`:
+
+- `sample_data/real_meeting_notes_anonymized.txt`
+- `sample_data/real_slack_thread_anonymized.txt`
+- `sample_data/real_email_thread_anonymized.txt`
+- `sample_data/incident_decisions_anonymized.csv`
+
+These files are anonymized examples that mimic real decision-heavy workplace communication.
+
 ## Local Storage
 
 Saved decisions are stored in:
@@ -103,4 +112,4 @@ messy workplace text -> structured decision records -> saved searchable vault
 
 ## Privacy Note
 
-Avoid uploading confidential, regulated, or sensitive workplace data unless your Gemini/API setup is approved for that use.
+Avoid uploading confidential, regulated, or sensitive workplace data unless your Gemini/API setup is approved for that use. See [PRIVACY.md](PRIVACY.md) for an anonymization checklist and data safety notes.

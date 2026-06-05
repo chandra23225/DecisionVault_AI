@@ -1,0 +1,6 @@
+source,date,speaker,message
+Incident Review,2026-05-18,Incident Commander,"Decision: keep the feature flag disabled until error rates stay below threshold for 48 hours."
+Incident Review,2026-05-18,SRE Lead,"The rollback reduced checkout errors from elevated to normal levels, but retry traffic is still unstable."
+Incident Review,2026-05-18,Engineering Manager,"Approved. Do not re-enable the feature flag today. SRE Lead owns monitoring. Backend Lead owns retry patch."
+Incident Review,2026-05-18,Product Lead,"Customer messaging should say the release is paused while stability validation completes."
+Incident Review,2026-05-18,Support Lead,"Support will update the incident macro after Product Lead shares approved wording."

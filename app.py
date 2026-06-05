@@ -32,7 +32,8 @@ st.write(
 
 st.info(
     "Demo tip: try uploading meeting_notes.txt, slack_thread.txt, and "
-    "email_thread.txt together."
+    "email_thread.txt together. For more realistic demos, use the anonymized "
+    "files in the sample_data folder."
 )
 
 st.warning(
