@@ -1,8 +1,26 @@
+# Environment variables and local secrets
 .env
+.streamlit/secrets.toml
+
+# Virtual environments
 .venv/
 .venv-1/
 venv/
+
+# Python cache
 __pycache__/
 *.pyc
-.streamlit/secrets.toml
+*.pyo
+*.pyd
+
+# Local app/database output
+*.db
+decision_vault.json
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Temporary polish folder
 github-polish/
