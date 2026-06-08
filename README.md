@@ -83,6 +83,13 @@ Create a `.env` file in the project folder:
 GEMINI_API_KEY=your_api_key_here
 ```
 
+For Streamlit deployment, you can also set `GEMINI_API_KEY` in Streamlit secrets.
+The local vault file can be changed with:
+
+```text
+DECISION_VAULT_FILE=data/decision_vault.json
+```
+
 ## Run Locally
 
 ```powershell
@@ -108,6 +115,21 @@ For a more realistic workplace-style demo, upload files from `sample_data/`:
 
 These files are anonymized examples that mimic real decision-heavy workplace communication.
 
+## Upload Safety
+
+DecisionVault AI validates uploads before sending text to Gemini:
+
+- accepts only `.txt`, `.md`, and `.csv`
+- enforces per-file and combined upload size limits
+- rejects empty files
+- rejects binary-looking files
+- requires UTF-8 readable text
+- validates that `.csv` files contain usable CSV rows
+
+This MVP does not include antivirus or malware scanning. A public or enterprise
+deployment should add an antivirus service such as ClamAV or a cloud file
+scanning service before processing uploaded files.
+
 ## Local Storage
 
 Saved decisions are stored in:
@@ -115,6 +137,9 @@ Saved decisions are stored in:
 ```text
 decision_vault.json
 ```
+
+You can override this path with `DECISION_VAULT_FILE` in `.env` or Streamlit
+secrets.
 
 This keeps the MVP simple and easy to inspect. A production or team version should move this storage to SQLite, Postgres, or another managed database.
 

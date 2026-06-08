@@ -1,13 +1,17 @@
 import os
 import json
 import re
-from io import BytesIO
+import csv
+import mimetypes
+from io import BytesIO, StringIO
+from pathlib import Path
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 
 # =========================
@@ -76,7 +80,19 @@ with st.sidebar:
 # API Setup
 # =========================
 
-API_KEY = os.getenv("GEMINI_API_KEY")
+def get_config_value(name, default=None):
+    env_value = os.getenv(name)
+
+    if env_value:
+        return env_value
+
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+
+API_KEY = get_config_value("GEMINI_API_KEY")
 
 if not API_KEY:
     st.error("GEMINI_API_KEY not found. Please add it to your .env file.")
@@ -93,7 +109,26 @@ except Exception as e:
 # Vault Storage Helpers
 # =========================
 
-VAULT_FILE = "decision_vault.json"
+VAULT_FILE = get_config_value("DECISION_VAULT_FILE", "decision_vault.json")
+ALLOWED_UPLOAD_EXTENSIONS = {".txt", ".md", ".csv"}
+ALLOWED_UPLOAD_MIME_TYPES = {
+    "application/octet-stream",
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+    "text/csv",
+    "application/csv",
+    "application/vnd.ms-excel"
+}
+MAX_UPLOAD_FILE_SIZE_MB = int(
+    get_config_value("MAX_UPLOAD_FILE_SIZE_MB", "2")
+)
+MAX_UPLOAD_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024
+MAX_TOTAL_UPLOAD_SIZE_MB = int(
+    get_config_value("MAX_TOTAL_UPLOAD_SIZE_MB", "5")
+)
+MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_TOTAL_UPLOAD_SIZE_MB * 1024 * 1024
+MAX_BINARY_CONTROL_CHAR_RATIO = 0.20
 
 
 class GeminiJSONError(Exception):
@@ -114,6 +149,11 @@ def load_vault():
 
 
 def save_vault(records):
+    vault_dir = os.path.dirname(VAULT_FILE)
+
+    if vault_dir:
+        os.makedirs(vault_dir, exist_ok=True)
+
     with open(VAULT_FILE, "w", encoding="utf-8") as file:
         json.dump(records, file, indent=2)
 
@@ -187,9 +227,161 @@ def save_decisions_to_vault(decision_records):
     return saved_count, duplicate_count, duplicate_records
 
 
+def delete_decision_from_vault(decision_id):
+    existing_records = load_vault()
+    remaining_records = [
+        record for record in existing_records
+        if record.get("decision_id") != decision_id
+    ]
+
+    if len(remaining_records) == len(existing_records):
+        return False
+
+    save_vault(remaining_records)
+    return True
+
+
 def clear_current_session():
     st.session_state.pop("decision_result", None)
     st.session_state.pop("combined_text", None)
+
+
+# =========================
+# Upload Validation Helpers
+# =========================
+
+def get_file_extension(filename):
+    return Path(filename or "").suffix.lower()
+
+
+def get_file_size(file):
+    size = getattr(file, "size", None)
+
+    if size is not None:
+        return size
+
+    return len(file.getvalue())
+
+
+def has_binary_signature(file_bytes):
+    if b"\x00" in file_bytes:
+        return True
+
+    if not file_bytes:
+        return False
+
+    allowed_control_bytes = {9, 10, 13}
+    control_byte_count = sum(
+        1 for byte in file_bytes
+        if byte < 32 and byte not in allowed_control_bytes
+    )
+    control_byte_ratio = control_byte_count / len(file_bytes)
+
+    return control_byte_ratio > MAX_BINARY_CONTROL_CHAR_RATIO
+
+
+def decode_uploaded_text(file_bytes):
+    if file_bytes.startswith(b"\xef\xbb\xbf"):
+        return file_bytes.decode("utf-8-sig")
+
+    return file_bytes.decode("utf-8")
+
+
+def validate_csv_content(filename, content):
+    if not content.strip():
+        return f"{filename} is empty."
+
+    sample = content[:4096]
+
+    try:
+        dialect = csv.Sniffer().sniff(sample)
+    except csv.Error:
+        dialect = csv.excel
+
+    try:
+        rows = list(csv.reader(StringIO(content), dialect))
+    except csv.Error as e:
+        return f"{filename} could not be parsed as CSV: {e}"
+
+    non_empty_rows = [
+        row for row in rows
+        if any(cell.strip() for cell in row)
+    ]
+
+    if not non_empty_rows:
+        return f"{filename} does not contain usable CSV rows."
+
+    if len(non_empty_rows) == 1 and len(non_empty_rows[0]) == 1:
+        return (
+            f"{filename} looks like plain text, not a CSV file. "
+            "Upload it as .txt or .md instead."
+        )
+
+    return None
+
+
+def validate_uploaded_file(file):
+    filename = file.name or "uploaded file"
+    extension = get_file_extension(filename)
+
+    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        return None, (
+            f"{filename} has unsupported extension '{extension or 'none'}'. "
+            "Allowed types are .txt, .md, and .csv."
+        )
+
+    file_size = get_file_size(file)
+
+    if file_size == 0:
+        return None, f"{filename} is empty."
+
+    if file_size > MAX_UPLOAD_FILE_SIZE_BYTES:
+        return None, (
+            f"{filename} is too large. Max file size is "
+            f"{MAX_UPLOAD_FILE_SIZE_MB} MB."
+        )
+
+    uploaded_mime_type = (getattr(file, "type", None) or "").lower()
+    guessed_mime_type, _ = mimetypes.guess_type(filename)
+    guessed_mime_type = (guessed_mime_type or "").lower()
+    mime_types_to_check = {
+        mime_type for mime_type in [uploaded_mime_type, guessed_mime_type]
+        if mime_type
+    }
+
+    disallowed_mime_types = mime_types_to_check - ALLOWED_UPLOAD_MIME_TYPES
+
+    if disallowed_mime_types:
+        return None, (
+            f"{filename} has unsupported content type: "
+            f"{', '.join(sorted(disallowed_mime_types))}."
+        )
+
+    file_bytes = file.getvalue()
+
+    if has_binary_signature(file_bytes):
+        return None, (
+            f"{filename} appears to contain binary data and was blocked."
+        )
+
+    try:
+        content = decode_uploaded_text(file_bytes)
+    except UnicodeDecodeError:
+        return None, (
+            f"{filename} is not valid UTF-8 text. Please upload a UTF-8 "
+            "encoded .txt, .md, or .csv file."
+        )
+
+    if not content.strip():
+        return None, f"{filename} does not contain readable text."
+
+    if extension == ".csv":
+        csv_error = validate_csv_content(filename, content)
+
+        if csv_error:
+            return None, csv_error
+
+    return content, None
 
 
 # =========================
@@ -199,7 +391,8 @@ def clear_current_session():
 uploaded_files = st.file_uploader(
     "Upload text files",
     type=["txt", "md", "csv"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    max_upload_size=MAX_UPLOAD_FILE_SIZE_MB
 )
 
 if st.button("Clear current session"):
@@ -209,16 +402,26 @@ if st.button("Clear current session"):
 
 def read_uploaded_files(files):
     combined_text = ""
+    validation_errors = []
+    total_size = sum(get_file_size(file) for file in files)
+
+    if total_size > MAX_TOTAL_UPLOAD_SIZE_BYTES:
+        validation_errors.append(
+            "Total upload size is too large. Max combined size is "
+            f"{MAX_TOTAL_UPLOAD_SIZE_MB} MB."
+        )
 
     for file in files:
-        try:
-            content = file.read().decode("utf-8", errors="ignore")
-            combined_text += f"\n\n--- SOURCE FILE: {file.name} ---\n"
-            combined_text += content
-        except Exception as e:
-            st.error(f"Could not read {file.name}: {e}")
+        content, validation_error = validate_uploaded_file(file)
 
-    return combined_text
+        if validation_error:
+            validation_errors.append(validation_error)
+            continue
+
+        combined_text += f"\n\n--- SOURCE FILE: {file.name} ---\n"
+        combined_text += content
+
+    return combined_text, validation_errors
 
 
 # =========================
@@ -237,7 +440,16 @@ def extract_json_from_response(raw_text):
     if raw_text.endswith("```"):
         raw_text = raw_text[:-3].strip()
 
-    return json.loads(raw_text)
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        json_start = raw_text.find("{")
+        json_end = raw_text.rfind("}")
+
+        if json_start == -1 or json_end == -1 or json_end <= json_start:
+            raise
+
+        return json.loads(raw_text[json_start:json_end + 1])
 
 
 def extract_decisions(text):
@@ -320,7 +532,10 @@ Workplace text:
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=prompt
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
     )
 
     raw_output = response.text or ""
@@ -468,6 +683,39 @@ def display_saved_vault(key_prefix):
 
         st.dataframe(filtered_df, use_container_width=True)
 
+        st.markdown("### Manage Saved Records")
+        decision_options = [
+            {
+                "id": record.get("decision_id"),
+                "label": (
+                    f"{record.get('decision_id', 'No ID')} - "
+                    f"{record.get('decision', 'Untitled decision')}"
+                )
+            }
+            for record in saved_records
+            if record.get("decision_id")
+        ]
+
+        if decision_options:
+            selected_decision = st.selectbox(
+                "Select a saved decision to delete",
+                decision_options,
+                format_func=lambda option: option["label"],
+                key=f"{key_prefix}_delete_select"
+            )
+
+            if st.button(
+                "Delete Selected Saved Decision",
+                key=f"{key_prefix}_delete_button"
+            ):
+                deleted = delete_decision_from_vault(selected_decision["id"])
+
+                if deleted:
+                    st.success("Saved decision deleted.")
+                    st.rerun()
+                else:
+                    st.warning("That saved decision could not be found.")
+
         saved_csv = saved_df.to_csv(index=False).encode("utf-8")
         saved_excel = convert_dataframe_to_excel(saved_df)
         filtered_csv = filtered_df.to_csv(index=False).encode("utf-8")
@@ -507,7 +755,8 @@ def display_saved_vault(key_prefix):
 
         if st.button("Clear Saved Vault", key=f"{key_prefix}_clear_button"):
             save_vault([])
-            st.success("Saved vault cleared. Refresh the page to update.")
+            st.success("Saved vault cleared.")
+            st.rerun()
     else:
         st.info(
             "No decisions saved yet. Generate decision records and click "
@@ -520,7 +769,16 @@ def display_saved_vault(key_prefix):
 # =========================
 
 if uploaded_files:
-    combined_text = read_uploaded_files(uploaded_files)
+    combined_text, validation_errors = read_uploaded_files(uploaded_files)
+
+    if validation_errors:
+        st.error("Some uploaded files were rejected.")
+
+        for validation_error in validation_errors:
+            st.warning(validation_error)
+
+        if not combined_text.strip():
+            st.stop()
 
     if not combined_text.strip():
         st.warning("Uploaded files appear to be empty.")
