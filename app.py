@@ -193,8 +193,151 @@ def get_duplicate_key(record):
     return (decision_text, affected_area)
 
 
+def has_meaningful_value(value):
+    text = str(value or "").strip().lower()
+    return text and text not in {"n/a", "none", "unknown", "not specified"}
+
+
+def update_probability_with_evidence(probability, likelihood_if_true, likelihood_if_false):
+    probability = min(max(probability, 0.01), 0.99)
+    prior_odds = probability / (1 - probability)
+    likelihood_ratio = likelihood_if_true / likelihood_if_false
+    posterior_odds = prior_odds * likelihood_ratio
+
+    return posterior_odds / (1 + posterior_odds)
+
+
+def get_unique_source_count(source_evidence):
+    source_names = set()
+
+    for evidence in source_evidence:
+        for source_name in re.findall(r"\(([^()]+\.(?:txt|md|csv))\)", str(evidence)):
+            source_names.add(source_name.lower())
+
+    return len(source_names)
+
+
+def calculate_bayesian_confidence(record):
+    probability = 0.60
+    factors = ["Started from a 60% prior for an extracted decision being valid."]
+
+    source_evidence = record.get("source_evidence", [])
+    if not isinstance(source_evidence, list):
+        source_evidence = []
+
+    evidence_count = len([item for item in source_evidence if str(item).strip()])
+    unique_source_count = get_unique_source_count(source_evidence)
+    combined_text = " ".join(
+        str(record.get(field, ""))
+        for field in [
+            "decision",
+            "reason",
+            "approver",
+            "reusable_context"
+        ]
+    )
+    combined_text += " " + " ".join(str(item) for item in source_evidence)
+    combined_text = combined_text.lower()
+
+    if evidence_count >= 4:
+        probability = update_probability_with_evidence(probability, 0.90, 0.35)
+        factors.append("Strong boost: four or more evidence snippets support it.")
+    elif evidence_count >= 2:
+        probability = update_probability_with_evidence(probability, 0.78, 0.45)
+        factors.append("Boost: multiple evidence snippets support it.")
+    elif evidence_count == 1:
+        probability = update_probability_with_evidence(probability, 0.62, 0.55)
+        factors.append("Small boost: at least one evidence snippet supports it.")
+    else:
+        probability = update_probability_with_evidence(probability, 0.30, 0.80)
+        factors.append("Penalty: no source evidence was captured.")
+
+    if unique_source_count >= 2:
+        probability = update_probability_with_evidence(probability, 0.82, 0.40)
+        factors.append("Boost: evidence appears across multiple source files.")
+
+    if has_meaningful_value(record.get("owner")):
+        probability = update_probability_with_evidence(probability, 0.74, 0.50)
+        factors.append("Boost: a decision owner is present.")
+    else:
+        probability = update_probability_with_evidence(probability, 0.40, 0.70)
+        factors.append("Penalty: no clear owner was found.")
+
+    if has_meaningful_value(record.get("approver")):
+        probability = update_probability_with_evidence(probability, 0.76, 0.50)
+        factors.append("Boost: approval or agreement context is present.")
+    else:
+        probability = update_probability_with_evidence(probability, 0.45, 0.68)
+        factors.append("Penalty: no approver or agreement context was found.")
+
+    approval_terms = [
+        "approved",
+        "approval",
+        "agreed",
+        "confirmed",
+        "sign off",
+        "signed off",
+        "decided",
+        "final"
+    ]
+    ambiguity_terms = [
+        "maybe",
+        "tentative",
+        "not sure",
+        "unclear",
+        "pending",
+        "blocked",
+        "depends",
+        "waiting"
+    ]
+
+    if any(term in combined_text for term in approval_terms):
+        probability = update_probability_with_evidence(probability, 0.80, 0.46)
+        factors.append("Boost: explicit decision or approval language was found.")
+
+    if any(term in combined_text for term in ambiguity_terms):
+        probability = update_probability_with_evidence(probability, 0.42, 0.75)
+        factors.append("Penalty: ambiguity or unresolved-dependency language was found.")
+
+    if not has_meaningful_value(record.get("reason")):
+        probability = update_probability_with_evidence(probability, 0.48, 0.68)
+        factors.append("Penalty: the rationale is missing or unclear.")
+
+    score = round(probability * 100)
+
+    if score >= 80:
+        level = "High"
+    elif score >= 60:
+        level = "Medium"
+    else:
+        level = "Low"
+
+    return {
+        "score": score,
+        "level": level,
+        "factors": factors
+    }
+
+
+def add_bayesian_confidence(record):
+    enriched_record = record.copy()
+    bayes_result = calculate_bayesian_confidence(enriched_record)
+
+    enriched_record["bayesian_confidence_score"] = bayes_result["score"]
+    enriched_record["bayesian_confidence_level"] = bayes_result["level"]
+    enriched_record["bayesian_confidence_factors"] = bayes_result["factors"]
+
+    return enriched_record
+
+
+def add_bayesian_confidence_to_records(records):
+    records = records or []
+    return [add_bayesian_confidence(record) for record in records]
+
+
 def save_decisions_to_vault(decision_records):
     existing_records = load_vault()
+    decision_records = add_bayesian_confidence_to_records(decision_records)
     existing_keys = {
         get_duplicate_key(record)
         for record in existing_records
@@ -574,7 +717,7 @@ Give a clear, concise answer.
 
 
 def display_saved_vault(key_prefix):
-    saved_records = load_vault()
+    saved_records = add_bayesian_confidence_to_records(load_vault())
 
     if saved_records:
         st.write(
@@ -593,12 +736,19 @@ def display_saved_vault(key_prefix):
             1 for record in saved_records
             if record.get("confidence", "").lower() == "low"
         )
+        average_bayes_score = round(
+            sum(
+                int(record.get("bayesian_confidence_score", 0))
+                for record in saved_records
+            ) / len(saved_records)
+        )
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Saved Decisions", len(saved_records))
         col2.metric("Active", active_count)
         col3.metric("High Confidence", high_confidence_count)
         col4.metric("Needs Review", low_confidence_count)
+        col5.metric("Avg Bayes Score", f"{average_bayes_score}%")
 
         st.markdown("### Search Saved Vault")
         saved_vault_question = st.text_input(
@@ -788,6 +938,9 @@ if uploaded_files:
         with st.spinner("Extracting decision records using Gemini..."):
             try:
                 result = extract_decisions(combined_text)
+                result["decision_records"] = add_bayesian_confidence_to_records(
+                    result.get("decision_records", [])
+                )
                 st.session_state["decision_result"] = result
                 st.session_state["combined_text"] = combined_text
                 st.success("Decision memory generated successfully!")
@@ -814,7 +967,10 @@ if "decision_result" in st.session_state:
     result = st.session_state["decision_result"]
     combined_text = st.session_state.get("combined_text", "")
 
-    decision_records = result.get("decision_records", [])
+    decision_records = add_bayesian_confidence_to_records(
+        result.get("decision_records", [])
+    )
+    result["decision_records"] = decision_records
     review_items = result.get("items_needing_human_review", [])
 
     total_decisions = len(decision_records)
@@ -827,16 +983,26 @@ if "decision_result" in st.session_state:
         for record in decision_records
     )
     human_review_count = len(review_items)
+    average_bayes_score = 0
+
+    if decision_records:
+        average_bayes_score = round(
+            sum(
+                int(record.get("bayesian_confidence_score", 0))
+                for record in decision_records
+            ) / len(decision_records)
+        )
 
     st.markdown("---")
     st.subheader("Decision Memory Overview")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric("Total Decisions", total_decisions)
     col2.metric("High Confidence", high_confidence)
     col3.metric("Follow-up Actions", total_followups)
     col4.metric("Human Review Items", human_review_count)
+    col5.metric("Avg Bayes Score", f"{average_bayes_score}%")
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         [
@@ -889,7 +1055,18 @@ if "decision_result" in st.session_state:
 
                 with col_b:
                     st.markdown(f"**Confidence:** {record.get('confidence', 'N/A')}")
+                    st.markdown(
+                        f"**Bayesian Confidence:** "
+                        f"{record.get('bayesian_confidence_score', 'N/A')}% "
+                        f"({record.get('bayesian_confidence_level', 'N/A')})"
+                    )
                     st.markdown(f"**Reusable Context:** {record.get('reusable_context', 'N/A')}")
+
+                    bayes_factors = record.get("bayesian_confidence_factors", [])
+                    if bayes_factors:
+                        with st.expander("Why this Bayesian score?"):
+                            for factor in bayes_factors:
+                                st.markdown(f"- {factor}")
 
                 dependencies = record.get("dependencies_or_conditions", [])
                 followups = record.get("follow_up_actions", [])
