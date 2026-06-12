@@ -1,17 +1,29 @@
 import os
 import json
-import re
-import csv
-import mimetypes
-from io import BytesIO, StringIO
-from pathlib import Path
-from datetime import datetime
+import html
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+from decisionvault.confidence import add_bayesian_confidence_to_records
+from decisionvault.gemini_helpers import GeminiJSONError, extract_json_from_response
+from decisionvault.storage import (
+    delete_decision_from_vault as delete_decision_from_vault_file,
+    load_vault as load_vault_file,
+    save_decisions_to_vault as save_decisions_to_vault_file,
+    save_vault as save_vault_file,
+)
+from decisionvault.validation import get_file_size, validate_uploaded_file
+from decisionvault.view_models import (
+    enrich_records_for_ui,
+    format_bytes,
+    summarize_records,
+    summarize_uploaded_files,
+)
 
 
 # =========================
@@ -26,53 +38,707 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧠 DecisionVault AI")
-st.subheader("GenAI-powered Decision Memory Layer for Teams and AI Agents")
+st.markdown(
+    """
+    <style>
+    :root {
+        --dv-bg: #f8fafc;
+        --dv-ink: #0f172a;
+        --dv-muted: #475569;
+        --dv-line: #d8dee8;
+        --dv-card: #ffffff;
+        --dv-teal: #0f766e;
+        --dv-teal-soft: #ccfbf1;
+        --dv-green: #047857;
+        --dv-amber: #b45309;
+        --dv-red: #dc2626;
+    }
 
-st.write(
-    "Upload workplace conversations, meeting notes, emails, or project notes. "
-    "DecisionVault AI will extract structured decision records."
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 32rem),
+            linear-gradient(180deg, #ffffff 0%, var(--dv-bg) 42%, #ffffff 100%);
+        color: var(--dv-ink);
+    }
+
+    .stApp,
+    .stApp p,
+    .stApp li,
+    .stApp label,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6,
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stMarkdownContainer"] * {
+        color: var(--dv-ink);
+    }
+
+    .stCaptionContainer,
+    .stCaptionContainer *,
+    small {
+        color: var(--dv-muted) !important;
+    }
+
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        max-width: 1240px;
+    }
+
+    [data-testid="stSidebar"] {
+        background: #f1f5f9;
+        border-right: 1px solid var(--dv-line);
+    }
+
+    [data-testid="stSidebar"] * {
+        color: var(--dv-ink) !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] li,
+    [data-testid="stSidebar"] .stCaptionContainer {
+        color: var(--dv-muted) !important;
+    }
+
+    [data-testid="stSidebar"] div[data-testid="stAlert"] *,
+    [data-testid="stAlert"] * {
+        color: var(--dv-ink) !important;
+    }
+
+    .dv-hero {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--dv-line);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        background: #ffffff;
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+    }
+
+    .dv-hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -6rem -8rem auto;
+        width: 22rem;
+        height: 22rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.08);
+    }
+
+    .dv-kicker {
+        display: inline-flex;
+        gap: 0.45rem;
+        align-items: center;
+        padding: 0.35rem 0.65rem;
+        border: 1px solid #99f6e4;
+        border-radius: 999px;
+        color: #115e59 !important;
+        background: #f0fdfa;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    .dv-hero h1 {
+        margin: 0.7rem 0 0.55rem;
+        color: var(--dv-ink) !important;
+        font-size: 2.45rem;
+        line-height: 1.08;
+        letter-spacing: 0;
+    }
+
+    .dv-hero p {
+        max-width: 760px;
+        color: var(--dv-muted) !important;
+        font-size: 1.08rem;
+        line-height: 1.65;
+        margin: 0;
+    }
+
+    .dv-appbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .dv-brand {
+        font-weight: 900;
+        letter-spacing: -0.01em;
+        color: var(--dv-ink) !important;
+    }
+
+    .dv-appbar-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        justify-content: flex-end;
+    }
+
+    .dv-mini-pill {
+        border: 1px solid var(--dv-line);
+        background: #ffffff;
+        border-radius: 999px;
+        padding: 0.32rem 0.62rem;
+        color: var(--dv-muted) !important;
+        font-size: 0.8rem;
+        font-weight: 750;
+    }
+
+    .dv-hero-grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        gap: 1.4rem;
+        align-items: stretch;
+    }
+
+    .dv-hero-side {
+        border: 1px solid var(--dv-line);
+        border-radius: 14px;
+        padding: 1rem;
+        background: #f8fafc;
+        display: grid;
+        gap: 0.7rem;
+        align-content: start;
+    }
+
+    .dv-pipeline-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin-top: 1.05rem;
+    }
+
+    .dv-pipeline-step {
+        border: 1px solid var(--dv-line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 0.8rem;
+    }
+
+    .dv-step-number {
+        width: 1.55rem;
+        height: 1.55rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #ffffff !important;
+        font-size: 0.78rem;
+        font-weight: 900;
+        margin-bottom: 0.5rem;
+    }
+
+    .dv-step-title {
+        color: var(--dv-ink) !important;
+        font-weight: 850;
+        margin-bottom: 0.15rem;
+    }
+
+    .dv-step-copy {
+        color: var(--dv-muted) !important;
+        font-size: 0.86rem;
+        line-height: 1.45;
+    }
+
+    .dv-side-label {
+        color: var(--dv-muted) !important;
+        font-size: 0.76rem;
+        font-weight: 850;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .dv-side-value {
+        color: var(--dv-ink) !important;
+        font-weight: 850;
+        font-size: 1.05rem;
+    }
+
+    .dv-workspace-title {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin: 1.25rem 0 0.7rem;
+    }
+
+    .dv-workspace-title h2 {
+        margin: 0;
+        font-size: 1.35rem;
+        letter-spacing: -0.01em;
+    }
+
+    .dv-workspace-title p {
+        margin: 0.1rem 0 0;
+        color: var(--dv-muted) !important;
+    }
+
+    .dv-panel-note {
+        border: 1px solid var(--dv-line);
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 0.95rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .dv-panel-note-title {
+        color: var(--dv-ink) !important;
+        font-weight: 850;
+        margin-bottom: 0.25rem;
+    }
+
+    .dv-panel-note-copy {
+        color: var(--dv-muted) !important;
+        line-height: 1.5;
+        font-size: 0.92rem;
+    }
+
+    .dv-file-list {
+        border: 1px solid var(--dv-line);
+        border-radius: 12px;
+        padding: 0.7rem 0.85rem;
+        background: #f8fafc;
+        margin: 0.65rem 0;
+    }
+
+    .dv-file-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.35rem 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .dv-file-row:last-child {
+        border-bottom: 0;
+    }
+
+    .dv-file-name {
+        color: var(--dv-ink) !important;
+        font-weight: 750;
+        overflow-wrap: anywhere;
+    }
+
+    .dv-file-size {
+        color: var(--dv-muted) !important;
+        white-space: nowrap;
+        font-size: 0.86rem;
+    }
+
+    .dv-empty-state {
+        border: 1px dashed #94a3b8;
+        border-radius: 14px;
+        background: #f8fafc;
+        padding: 1.3rem;
+        text-align: center;
+        margin: 0.75rem 0;
+    }
+
+    .dv-empty-state strong {
+        display: block;
+        color: var(--dv-ink) !important;
+        margin-bottom: 0.25rem;
+    }
+
+    .dv-empty-state span {
+        color: var(--dv-muted) !important;
+    }
+
+    .dv-hero-grid {
+        position: relative;
+        z-index: 1;
+    }
+
+    .dv-status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 180px;
+        padding: 0.8rem 1rem;
+        border-radius: 14px;
+        background: #f0fdfa;
+        border: 1px solid #99f6e4;
+        color: #115e59 !important;
+        font-weight: 800;
+    }
+
+    .dv-card-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.9rem;
+        margin: 1rem 0 1.25rem;
+    }
+
+    .dv-card {
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid var(--dv-line);
+        border-radius: 12px;
+        padding: 1rem;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+
+    .dv-card-label {
+        color: var(--dv-muted) !important;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 0.35rem;
+    }
+
+    .dv-card-title {
+        color: var(--dv-ink) !important;
+        font-size: 1.05rem;
+        font-weight: 800;
+        margin-bottom: 0.2rem;
+    }
+
+    .dv-card-body {
+        color: var(--dv-muted) !important;
+        font-size: 0.92rem;
+        line-height: 1.5;
+    }
+
+    .dv-alert-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.9rem;
+        margin-bottom: 1.2rem;
+    }
+
+    .dv-alert {
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--dv-line);
+        background: #ffffff;
+        color: var(--dv-muted) !important;
+        line-height: 1.45;
+    }
+
+    .dv-alert strong {
+        display: block;
+        color: var(--dv-ink) !important;
+        margin-bottom: 0.15rem;
+    }
+
+    .dv-alert.quickstart {
+        border-left: 4px solid var(--dv-teal);
+    }
+
+    .dv-alert.privacy {
+        border-left: 4px solid var(--dv-amber);
+    }
+
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 10px;
+        border: 1px solid #99f6e4;
+        background: #ccfbf1;
+        color: #134e4a !important;
+        font-weight: 750;
+        box-shadow: 0 10px 22px rgba(15, 118, 110, 0.12);
+    }
+
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        border-color: #5eead4;
+        background: #99f6e4;
+        color: #0f172a !important;
+        transform: translateY(-1px);
+    }
+
+    .stButton > button *,
+    .stDownloadButton > button * {
+        color: inherit !important;
+    }
+
+    .stButton > button:disabled,
+    .stDownloadButton > button:disabled {
+        background: #e2e8f0;
+        border-color: #cbd5e1;
+        color: #475569 !important;
+        box-shadow: none;
+    }
+
+    div[data-testid="stMetric"] {
+        background: #ffffff;
+        border: 1px solid var(--dv-line);
+        border-radius: 12px;
+        padding: 0.95rem 1rem;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    div[data-testid="stMetric"] * {
+        color: var(--dv-ink) !important;
+    }
+
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] * {
+        color: var(--dv-muted) !important;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.35rem;
+        background: #e2e8f0;
+        padding: 0.35rem;
+        border-radius: 12px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 9px;
+        padding: 0.55rem 0.9rem;
+        font-weight: 750;
+        color: var(--dv-ink) !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: #ffffff;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    }
+
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs [aria-selected="true"] * {
+        color: var(--dv-ink) !important;
+    }
+
+    input,
+    textarea,
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea {
+        color: var(--dv-ink) !important;
+        background: #ffffff !important;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+        color: #64748b !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="stFileUploader"] *,
+    [data-testid="stDataFrame"] *,
+    [data-testid="stDataEditor"] * {
+        color: var(--dv-ink);
+    }
+
+    .dv-section-title {
+        margin: 1.25rem 0 0.7rem;
+        font-size: 1.2rem;
+        font-weight: 850;
+        color: var(--dv-ink);
+    }
+
+    .dv-decision-card {
+        border: 1px solid var(--dv-line);
+        border-radius: 14px;
+        padding: 1.1rem;
+        margin: 0.95rem 0;
+        background: #ffffff;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+    }
+
+    .dv-record-shell {
+        border: 1px solid var(--dv-line);
+        border-radius: 16px;
+        padding: 1rem;
+        background: #ffffff;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+        margin: 1rem 0;
+    }
+
+    .dv-actions-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin: 0.9rem 0;
+    }
+
+    .dv-decision-heading {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-start;
+        margin-bottom: 0.75rem;
+    }
+
+    .dv-number {
+        flex: 0 0 auto;
+        width: 2rem;
+        height: 2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--dv-teal-soft);
+        color: #115e59 !important;
+        font-weight: 850;
+    }
+
+    .dv-decision-title {
+        font-size: 1.12rem;
+        font-weight: 850;
+        color: var(--dv-ink) !important;
+        line-height: 1.35;
+    }
+
+    .dv-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin: 0.35rem 0 0.6rem;
+    }
+
+    .dv-chip {
+        display: inline-flex;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #334155 !important;
+        font-size: 0.78rem;
+        font-weight: 750;
+    }
+
+    .dv-chip.high {
+        background: #dcfce7;
+        color: #166534 !important;
+    }
+
+    .dv-chip.ready {
+        background: #d1fae5;
+        color: #065f46 !important;
+    }
+
+    .dv-chip.medium {
+        background: #fef3c7;
+        color: #92400e !important;
+    }
+
+    .dv-chip.low {
+        background: #fee2e2;
+        color: #991b1b !important;
+    }
+
+    .dv-field-label {
+        color: var(--dv-muted) !important;
+        font-size: 0.77rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 0.2rem;
+    }
+
+    .dv-field-value {
+        color: var(--dv-ink) !important;
+        line-height: 1.45;
+        margin-bottom: 0.6rem;
+    }
+
+    @media (max-width: 760px) {
+        .dv-hero {
+            padding: 1.35rem;
+        }
+
+        .dv-hero h1 {
+            font-size: 2.1rem;
+        }
+
+        .dv-hero-grid,
+        .dv-pipeline-row,
+        .dv-card-grid,
+        .dv-alert-row,
+        .dv-actions-row {
+            grid-template-columns: 1fr;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-st.info(
-    "Demo tip: try uploading meeting_notes.txt, slack_thread.txt, and "
-    "email_thread.txt together. For more realistic demos, use the anonymized "
-    "files in the sample_data folder."
-)
-
-st.warning(
-    "Privacy note: avoid uploading confidential or regulated data unless your "
-    "Gemini/API setup is approved for that use."
+st.markdown(
+    """
+    <div class="dv-appbar">
+        <div class="dv-brand">DecisionVault AI</div>
+        <div class="dv-appbar-meta">
+            <span class="dv-mini-pill">Local vault storage</span>
+            <span class="dv-mini-pill">Gemini extraction</span>
+            <span class="dv-mini-pill">Review before save</span>
+        </div>
+    </div>
+    <div class="dv-hero">
+        <div class="dv-hero-grid">
+            <div>
+                <div class="dv-kicker">Decision Memory Layer</div>
+                <h1>DecisionVault AI</h1>
+                <p>
+                    Convert scattered workplace communication into decision records with
+                    rationale, ownership, approval context, evidence, and reusable memory.
+                </p>
+                <div class="dv-pipeline-row">
+                    <div class="dv-pipeline-step">
+                        <div class="dv-step-number">1</div>
+                        <div class="dv-step-title">Add evidence</div>
+                        <div class="dv-step-copy">Upload notes, threads, emails, markdown, or CSV exports.</div>
+                    </div>
+                    <div class="dv-pipeline-step">
+                        <div class="dv-step-number">2</div>
+                        <div class="dv-step-title">Extract decisions</div>
+                        <div class="dv-step-copy">Generate structured records from messy source text.</div>
+                    </div>
+                    <div class="dv-pipeline-step">
+                        <div class="dv-step-number">3</div>
+                        <div class="dv-step-title">Review and reuse</div>
+                        <div class="dv-step-copy">Edit records, save to the vault, export, and search later.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="dv-hero-side">
+                <div>
+                    <div class="dv-side-label">Primary output</div>
+                    <div class="dv-side-value">Reusable decision records</div>
+                </div>
+                <div>
+                    <div class="dv-side-label">Evidence policy</div>
+                    <div class="dv-side-value">Source-backed extraction</div>
+                </div>
+                <div>
+                    <div class="dv-side-label">Human control</div>
+                    <div class="dv-side-value">Editable before save</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 with st.sidebar:
-    st.header("MVP Positioning")
-    st.write(
-        "DecisionVault AI is an out-of-the-box decision memory layer for messy "
-        "workplace communication."
-    )
+    st.header("Workspace")
+    st.caption("Decision extraction, review, and saved memory.")
 
-    st.markdown("### Why now")
+    st.markdown("### Best-fit records")
     st.markdown(
-        "- Teams make decisions across meetings, chat, email, and docs\n"
-        "- Summaries often miss ownership, approvals, and decision rationale\n"
-        "- AI agents need reusable context, not scattered conversation history"
-    )
-
-    st.markdown("### Best-fit use cases")
-    st.markdown(
-        "- Launch and timeline decisions\n"
-        "- Vendor or tooling choices\n"
+        "- Launch or timeline choices\n"
+        "- Vendor and tooling selections\n"
         "- Approval dependencies\n"
         "- Incident follow-ups\n"
-        "- Project handoffs and onboarding"
+        "- Project handoff decisions"
     )
 
-    st.markdown("### MVP status")
-    st.success("Ready for demos with anonymized real-world style data")
+    st.markdown("### Data note")
+    st.info("Avoid sensitive or regulated data unless your Gemini/API setup is approved.")
     st.caption(
-        "Production use would need authentication, team workspaces, database "
-        "storage, and approved data governance."
+        "A production deployment should add authentication, database storage, "
+        "access controls, and retention policy."
     )
 
 
@@ -110,16 +776,6 @@ except Exception as e:
 # =========================
 
 VAULT_FILE = get_config_value("DECISION_VAULT_FILE", "decision_vault.json")
-ALLOWED_UPLOAD_EXTENSIONS = {".txt", ".md", ".csv"}
-ALLOWED_UPLOAD_MIME_TYPES = {
-    "application/octet-stream",
-    "text/plain",
-    "text/markdown",
-    "text/x-markdown",
-    "text/csv",
-    "application/csv",
-    "application/vnd.ms-excel"
-}
 MAX_UPLOAD_FILE_SIZE_MB = int(
     get_config_value("MAX_UPLOAD_FILE_SIZE_MB", "2")
 )
@@ -128,48 +784,6 @@ MAX_TOTAL_UPLOAD_SIZE_MB = int(
     get_config_value("MAX_TOTAL_UPLOAD_SIZE_MB", "5")
 )
 MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_TOTAL_UPLOAD_SIZE_MB * 1024 * 1024
-MAX_BINARY_CONTROL_CHAR_RATIO = 0.20
-
-
-class GeminiJSONError(Exception):
-    def __init__(self, message, raw_response):
-        super().__init__(message)
-        self.raw_response = raw_response
-
-
-def load_vault():
-    if not os.path.exists(VAULT_FILE):
-        return []
-
-    try:
-        with open(VAULT_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except Exception:
-        return []
-
-
-def save_vault(records):
-    vault_dir = os.path.dirname(VAULT_FILE)
-
-    if vault_dir:
-        os.makedirs(vault_dir, exist_ok=True)
-
-    with open(VAULT_FILE, "w", encoding="utf-8") as file:
-        json.dump(records, file, indent=2)
-
-
-def generate_decision_id(existing_records):
-    highest_number = 0
-
-    for record in existing_records:
-        decision_id = str(record.get("decision_id", ""))
-        match = re.match(r"DV-(\d+)$", decision_id)
-
-        if match:
-            highest_number = max(highest_number, int(match.group(1)))
-
-    next_number = highest_number + 1
-    return f"DV-{next_number:03d}"
 
 
 def convert_dataframe_to_excel(df):
@@ -181,207 +795,163 @@ def convert_dataframe_to_excel(df):
     return output.getvalue()
 
 
-def normalize_for_duplicate_check(value):
-    return str(value or "").strip().lower()
+LIST_RECORD_FIELDS = [
+    "dependencies_or_conditions",
+    "follow_up_actions",
+    "source_evidence"
+]
+
+EDITABLE_RECORD_FIELDS = [
+    "decision",
+    "decision_type",
+    "reason",
+    "owner",
+    "approver",
+    "affected_project_or_workflow",
+    "dependencies_or_conditions",
+    "follow_up_actions",
+    "source_evidence",
+    "confidence",
+    "reusable_context"
+]
 
 
-def get_duplicate_key(record):
-    decision_text = normalize_for_duplicate_check(record.get("decision"))
-    affected_area = normalize_for_duplicate_check(
-        record.get("affected_project_or_workflow")
-    )
-    return (decision_text, affected_area)
+def list_to_editor_text(value):
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value if str(item).strip())
+
+    return str(value or "")
 
 
-def has_meaningful_value(value):
-    text = str(value or "").strip().lower()
-    return text and text not in {"n/a", "none", "unknown", "not specified"}
-
-
-def update_probability_with_evidence(probability, likelihood_if_true, likelihood_if_false):
-    probability = min(max(probability, 0.01), 0.99)
-    prior_odds = probability / (1 - probability)
-    likelihood_ratio = likelihood_if_true / likelihood_if_false
-    posterior_odds = prior_odds * likelihood_ratio
-
-    return posterior_odds / (1 + posterior_odds)
-
-
-def get_unique_source_count(source_evidence):
-    source_names = set()
-
-    for evidence in source_evidence:
-        for source_name in re.findall(r"\(([^()]+\.(?:txt|md|csv))\)", str(evidence)):
-            source_names.add(source_name.lower())
-
-    return len(source_names)
-
-
-def calculate_bayesian_confidence(record):
-    probability = 0.60
-    factors = ["Started from a 60% prior for an extracted decision being valid."]
-
-    source_evidence = record.get("source_evidence", [])
-    if not isinstance(source_evidence, list):
-        source_evidence = []
-
-    evidence_count = len([item for item in source_evidence if str(item).strip()])
-    unique_source_count = get_unique_source_count(source_evidence)
-    combined_text = " ".join(
-        str(record.get(field, ""))
-        for field in [
-            "decision",
-            "reason",
-            "approver",
-            "reusable_context"
-        ]
-    )
-    combined_text += " " + " ".join(str(item) for item in source_evidence)
-    combined_text = combined_text.lower()
-
-    if evidence_count >= 4:
-        probability = update_probability_with_evidence(probability, 0.90, 0.35)
-        factors.append("Strong boost: four or more evidence snippets support it.")
-    elif evidence_count >= 2:
-        probability = update_probability_with_evidence(probability, 0.78, 0.45)
-        factors.append("Boost: multiple evidence snippets support it.")
-    elif evidence_count == 1:
-        probability = update_probability_with_evidence(probability, 0.62, 0.55)
-        factors.append("Small boost: at least one evidence snippet supports it.")
-    else:
-        probability = update_probability_with_evidence(probability, 0.30, 0.80)
-        factors.append("Penalty: no source evidence was captured.")
-
-    if unique_source_count >= 2:
-        probability = update_probability_with_evidence(probability, 0.82, 0.40)
-        factors.append("Boost: evidence appears across multiple source files.")
-
-    if has_meaningful_value(record.get("owner")):
-        probability = update_probability_with_evidence(probability, 0.74, 0.50)
-        factors.append("Boost: a decision owner is present.")
-    else:
-        probability = update_probability_with_evidence(probability, 0.40, 0.70)
-        factors.append("Penalty: no clear owner was found.")
-
-    if has_meaningful_value(record.get("approver")):
-        probability = update_probability_with_evidence(probability, 0.76, 0.50)
-        factors.append("Boost: approval or agreement context is present.")
-    else:
-        probability = update_probability_with_evidence(probability, 0.45, 0.68)
-        factors.append("Penalty: no approver or agreement context was found.")
-
-    approval_terms = [
-        "approved",
-        "approval",
-        "agreed",
-        "confirmed",
-        "sign off",
-        "signed off",
-        "decided",
-        "final"
-    ]
-    ambiguity_terms = [
-        "maybe",
-        "tentative",
-        "not sure",
-        "unclear",
-        "pending",
-        "blocked",
-        "depends",
-        "waiting"
+def editor_text_to_list(value):
+    return [
+        line.strip()
+        for line in str(value or "").splitlines()
+        if line.strip()
     ]
 
-    if any(term in combined_text for term in approval_terms):
-        probability = update_probability_with_evidence(probability, 0.80, 0.46)
-        factors.append("Boost: explicit decision or approval language was found.")
 
-    if any(term in combined_text for term in ambiguity_terms):
-        probability = update_probability_with_evidence(probability, 0.42, 0.75)
-        factors.append("Penalty: ambiguity or unresolved-dependency language was found.")
+def prepare_records_for_editor(records):
+    editor_rows = []
 
-    if not has_meaningful_value(record.get("reason")):
-        probability = update_probability_with_evidence(probability, 0.48, 0.68)
-        factors.append("Penalty: the rationale is missing or unclear.")
+    for record in records:
+        editor_row = {}
 
-    score = round(probability * 100)
+        for field in EDITABLE_RECORD_FIELDS:
+            value = record.get(field, "")
+            if field in LIST_RECORD_FIELDS:
+                value = list_to_editor_text(value)
 
-    if score >= 80:
-        level = "High"
-    elif score >= 60:
-        level = "Medium"
-    else:
-        level = "Low"
+            editor_row[field] = value
 
-    return {
-        "score": score,
-        "level": level,
-        "factors": factors
-    }
+        editor_rows.append(editor_row)
+
+    return pd.DataFrame(editor_rows, columns=EDITABLE_RECORD_FIELDS)
 
 
-def add_bayesian_confidence(record):
-    enriched_record = record.copy()
-    bayes_result = calculate_bayesian_confidence(enriched_record)
+def records_from_editor(editor_df):
+    edited_records = editor_df.to_dict(orient="records")
 
-    enriched_record["bayesian_confidence_score"] = bayes_result["score"]
-    enriched_record["bayesian_confidence_level"] = bayes_result["level"]
-    enriched_record["bayesian_confidence_factors"] = bayes_result["factors"]
+    for record in edited_records:
+        for field in LIST_RECORD_FIELDS:
+            record[field] = editor_text_to_list(record.get(field, ""))
 
-    return enriched_record
+    return enrich_records_for_ui(
+        add_bayesian_confidence_to_records(edited_records)
+    )
 
 
-def add_bayesian_confidence_to_records(records):
-    records = records or []
-    return [add_bayesian_confidence(record) for record in records]
+def confidence_chip_class(confidence):
+    confidence = str(confidence or "").strip().lower()
+
+    if confidence in {"high", "medium", "low"}:
+        return confidence
+
+    return ""
+
+
+def quality_chip_class(level):
+    level = str(level or "").strip().lower()
+
+    if level == "ready":
+        return "ready"
+
+    if level == "review":
+        return "medium"
+
+    if level == "incomplete":
+        return "low"
+
+    return ""
+
+
+def html_text(value):
+    return html.escape(str(value if value is not None else "N/A"))
 
 
 def save_decisions_to_vault(decision_records):
-    existing_records = load_vault()
-    decision_records = add_bayesian_confidence_to_records(decision_records)
-    existing_keys = {
-        get_duplicate_key(record)
-        for record in existing_records
-    }
-
-    saved_count = 0
-    duplicate_count = 0
-    duplicate_records = []
-
-    for record in decision_records:
-        duplicate_key = get_duplicate_key(record)
-
-        if duplicate_key in existing_keys:
-            duplicate_count += 1
-            duplicate_records.append(record)
-            continue
-
-        new_record = record.copy()
-
-        new_record["decision_id"] = generate_decision_id(existing_records)
-        new_record["saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_record["status"] = "Active"
-
-        existing_records.append(new_record)
-        existing_keys.add(duplicate_key)
-        saved_count += 1
-
-    save_vault(existing_records)
-
-    return saved_count, duplicate_count, duplicate_records
+    return save_decisions_to_vault_file(decision_records, VAULT_FILE)
 
 
 def delete_decision_from_vault(decision_id):
-    existing_records = load_vault()
-    remaining_records = [
-        record for record in existing_records
-        if record.get("decision_id") != decision_id
-    ]
+    return delete_decision_from_vault_file(decision_id, VAULT_FILE)
 
-    if len(remaining_records) == len(existing_records):
-        return False
 
-    save_vault(remaining_records)
-    return True
+def load_vault():
+    return load_vault_file(VAULT_FILE)
+
+
+def save_vault(records):
+    save_vault_file(records, VAULT_FILE)
+
+
+def render_uploaded_file_list(files):
+    file_summary = summarize_uploaded_files(files)
+    rows = []
+
+    for file in file_summary["files"]:
+        rows.append(
+            f"""
+            <div class="dv-file-row">
+                <span class="dv-file-name">{html_text(file["name"])}</span>
+                <span class="dv-file-size">{html_text(file["size_label"])}</span>
+            </div>
+            """
+        )
+
+    st.markdown(
+        f"""
+        <div class="dv-file-list">
+            {''.join(rows)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def get_vault_summary():
+    saved_records = enrich_records_for_ui(
+        add_bayesian_confidence_to_records(load_vault())
+    )
+    record_summary = summarize_records(saved_records)
+
+    if not saved_records:
+        return {
+            "saved_count": 0,
+            "active_count": 0,
+            "needs_review_count": 0,
+            "average_quality_score": 0
+        }
+
+    return {
+        "saved_count": len(saved_records),
+        "active_count": sum(
+            1 for record in saved_records
+            if record.get("status", "").lower() == "active"
+        ),
+        "needs_review_count": record_summary["review"] + record_summary["incomplete"],
+        "average_quality_score": record_summary["average_quality_score"]
+    }
 
 
 def clear_current_session():
@@ -390,157 +960,105 @@ def clear_current_session():
 
 
 # =========================
-# Upload Validation Helpers
-# =========================
-
-def get_file_extension(filename):
-    return Path(filename or "").suffix.lower()
-
-
-def get_file_size(file):
-    size = getattr(file, "size", None)
-
-    if size is not None:
-        return size
-
-    return len(file.getvalue())
-
-
-def has_binary_signature(file_bytes):
-    if b"\x00" in file_bytes:
-        return True
-
-    if not file_bytes:
-        return False
-
-    allowed_control_bytes = {9, 10, 13}
-    control_byte_count = sum(
-        1 for byte in file_bytes
-        if byte < 32 and byte not in allowed_control_bytes
-    )
-    control_byte_ratio = control_byte_count / len(file_bytes)
-
-    return control_byte_ratio > MAX_BINARY_CONTROL_CHAR_RATIO
-
-
-def decode_uploaded_text(file_bytes):
-    if file_bytes.startswith(b"\xef\xbb\xbf"):
-        return file_bytes.decode("utf-8-sig")
-
-    return file_bytes.decode("utf-8")
-
-
-def validate_csv_content(filename, content):
-    if not content.strip():
-        return f"{filename} is empty."
-
-    sample = content[:4096]
-
-    try:
-        dialect = csv.Sniffer().sniff(sample)
-    except csv.Error:
-        dialect = csv.excel
-
-    try:
-        rows = list(csv.reader(StringIO(content), dialect))
-    except csv.Error as e:
-        return f"{filename} could not be parsed as CSV: {e}"
-
-    non_empty_rows = [
-        row for row in rows
-        if any(cell.strip() for cell in row)
-    ]
-
-    if not non_empty_rows:
-        return f"{filename} does not contain usable CSV rows."
-
-    if len(non_empty_rows) == 1 and len(non_empty_rows[0]) == 1:
-        return (
-            f"{filename} looks like plain text, not a CSV file. "
-            "Upload it as .txt or .md instead."
-        )
-
-    return None
-
-
-def validate_uploaded_file(file):
-    filename = file.name or "uploaded file"
-    extension = get_file_extension(filename)
-
-    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
-        return None, (
-            f"{filename} has unsupported extension '{extension or 'none'}'. "
-            "Allowed types are .txt, .md, and .csv."
-        )
-
-    file_size = get_file_size(file)
-
-    if file_size == 0:
-        return None, f"{filename} is empty."
-
-    if file_size > MAX_UPLOAD_FILE_SIZE_BYTES:
-        return None, (
-            f"{filename} is too large. Max file size is "
-            f"{MAX_UPLOAD_FILE_SIZE_MB} MB."
-        )
-
-    uploaded_mime_type = (getattr(file, "type", None) or "").lower()
-    guessed_mime_type, _ = mimetypes.guess_type(filename)
-    guessed_mime_type = (guessed_mime_type or "").lower()
-    mime_types_to_check = {
-        mime_type for mime_type in [uploaded_mime_type, guessed_mime_type]
-        if mime_type
-    }
-
-    disallowed_mime_types = mime_types_to_check - ALLOWED_UPLOAD_MIME_TYPES
-
-    if disallowed_mime_types:
-        return None, (
-            f"{filename} has unsupported content type: "
-            f"{', '.join(sorted(disallowed_mime_types))}."
-        )
-
-    file_bytes = file.getvalue()
-
-    if has_binary_signature(file_bytes):
-        return None, (
-            f"{filename} appears to contain binary data and was blocked."
-        )
-
-    try:
-        content = decode_uploaded_text(file_bytes)
-    except UnicodeDecodeError:
-        return None, (
-            f"{filename} is not valid UTF-8 text. Please upload a UTF-8 "
-            "encoded .txt, .md, or .csv file."
-        )
-
-    if not content.strip():
-        return None, f"{filename} does not contain readable text."
-
-    if extension == ".csv":
-        csv_error = validate_csv_content(filename, content)
-
-        if csv_error:
-            return None, csv_error
-
-    return content, None
-
-
-# =========================
 # File Upload
 # =========================
 
-uploaded_files = st.file_uploader(
-    "Upload text files",
-    type=["txt", "md", "csv"],
-    accept_multiple_files=True,
-    max_upload_size=MAX_UPLOAD_FILE_SIZE_MB
+st.markdown(
+    """
+    <div class="dv-workspace-title">
+        <div>
+            <h2>Source Workspace</h2>
+            <p>Add evidence on the left. Track saved decision memory on the right.</p>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
-if st.button("Clear current session"):
-    clear_current_session()
-    st.success("Current generated decision memory cleared.")
+source_col, memory_col = st.columns([1.45, 1], gap="large")
+
+with source_col:
+    with st.container(border=True):
+        st.markdown('<div class="dv-section-title">Source Evidence</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="dv-panel-note">
+                <div class="dv-panel-note-title">Accepted files</div>
+                <div class="dv-panel-note-copy">
+                    Upload .txt, .md, or .csv files. Keep the total upload under the configured limit
+                    and remove sensitive data before processing.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        uploaded_files = st.file_uploader(
+            "Upload source files",
+            type=["txt", "md", "csv"],
+            accept_multiple_files=True,
+            max_upload_size=MAX_UPLOAD_FILE_SIZE_MB,
+            label_visibility="collapsed"
+        )
+
+        if uploaded_files:
+            upload_summary = summarize_uploaded_files(uploaded_files)
+            metric_col1, metric_col2, metric_col3 = st.columns(3)
+            metric_col1.metric("Files", upload_summary["count"])
+            metric_col2.metric("Total Size", upload_summary["total_size_label"])
+            metric_col3.metric("Limit", f"{MAX_TOTAL_UPLOAD_SIZE_MB} MB")
+            render_uploaded_file_list(uploaded_files)
+        else:
+            st.markdown(
+                """
+                <div class="dv-empty-state">
+                    <strong>No source files selected</strong>
+                    <span>Use the uploader above to add meeting notes, threads, emails, or exports.</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        action_col1, action_col2 = st.columns([1, 1])
+        with action_col1:
+            generate_clicked = st.button(
+                "Generate Decision Memory",
+                type="primary",
+                use_container_width=True,
+                disabled=not uploaded_files
+            )
+        with action_col2:
+            clear_clicked = st.button(
+                "Clear Current Session",
+                use_container_width=True
+            )
+
+        if clear_clicked:
+            clear_current_session()
+            st.success("Current generated decision memory cleared.")
+
+with memory_col:
+    with st.container(border=True):
+        st.markdown('<div class="dv-section-title">Vault Snapshot</div>', unsafe_allow_html=True)
+        vault_summary = get_vault_summary()
+        vault_col1, vault_col2 = st.columns(2)
+        vault_col1.metric("Saved", vault_summary["saved_count"])
+        vault_col2.metric("Active", vault_summary["active_count"])
+        vault_col3, vault_col4 = st.columns(2)
+        vault_col3.metric("Needs Review", vault_summary["needs_review_count"])
+        vault_col4.metric("Quality", f'{vault_summary["average_quality_score"]}%')
+        st.markdown(
+            """
+            <div class="dv-panel-note">
+                <div class="dv-panel-note-title">How to use the vault</div>
+                <div class="dv-panel-note-copy">
+                    Generate records, review them, save the useful ones, then search across saved decisions
+                    when the same workflow question comes back later.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def read_uploaded_files(files):
@@ -555,7 +1073,11 @@ def read_uploaded_files(files):
         )
 
     for file in files:
-        content, validation_error = validate_uploaded_file(file)
+        content, validation_error = validate_uploaded_file(
+            file,
+            MAX_UPLOAD_FILE_SIZE_BYTES,
+            MAX_UPLOAD_FILE_SIZE_MB
+        )
 
         if validation_error:
             validation_errors.append(validation_error)
@@ -565,34 +1087,6 @@ def read_uploaded_files(files):
         combined_text += content
 
     return combined_text, validation_errors
-
-
-# =========================
-# Gemini Helpers
-# =========================
-
-def extract_json_from_response(raw_text):
-    raw_text = raw_text.strip()
-
-    if raw_text.startswith("```json"):
-        raw_text = raw_text.replace("```json", "", 1).strip()
-
-    if raw_text.startswith("```"):
-        raw_text = raw_text.replace("```", "", 1).strip()
-
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3].strip()
-
-    try:
-        return json.loads(raw_text)
-    except json.JSONDecodeError:
-        json_start = raw_text.find("{")
-        json_end = raw_text.rfind("}")
-
-        if json_start == -1 or json_end == -1 or json_end <= json_start:
-            raise
-
-        return json.loads(raw_text[json_start:json_end + 1])
 
 
 def extract_decisions(text):
@@ -934,7 +1428,7 @@ if uploaded_files:
         st.warning("Uploaded files appear to be empty.")
         st.stop()
 
-    if st.button("Generate Decision Memory"):
+    if generate_clicked:
         with st.spinner("Extracting decision records using Gemini..."):
             try:
                 result = extract_decisions(combined_text)
@@ -956,7 +1450,9 @@ if uploaded_files:
                 st.error(f"Something went wrong: {e}")
 
 else:
-    st.info("Upload one or more files to begin.")
+    combined_text = ""
+    if generate_clicked:
+        st.warning("Upload one or more files before generating decision memory.")
 
 
 # =========================
@@ -967,51 +1463,48 @@ if "decision_result" in st.session_state:
     result = st.session_state["decision_result"]
     combined_text = st.session_state.get("combined_text", "")
 
-    decision_records = add_bayesian_confidence_to_records(
-        result.get("decision_records", [])
+    decision_records = enrich_records_for_ui(
+        add_bayesian_confidence_to_records(
+            result.get("decision_records", [])
+        )
     )
     result["decision_records"] = decision_records
     review_items = result.get("items_needing_human_review", [])
-
-    total_decisions = len(decision_records)
-    high_confidence = sum(
-        1 for record in decision_records
-        if record.get("confidence", "").lower() == "high"
-    )
+    record_summary = summarize_records(decision_records)
     total_followups = sum(
         len(record.get("follow_up_actions", []))
         for record in decision_records
     )
     human_review_count = len(review_items)
-    average_bayes_score = 0
 
-    if decision_records:
-        average_bayes_score = round(
-            sum(
-                int(record.get("bayesian_confidence_score", 0))
-                for record in decision_records
-            ) / len(decision_records)
-        )
-
-    st.markdown("---")
-    st.subheader("Decision Memory Overview")
+    st.markdown(
+        """
+        <div class="dv-workspace-title">
+            <div>
+                <h2>Decision Memory Review</h2>
+                <p>Review generated records, edit fields, ask questions, and save durable context.</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
-    col1.metric("Total Decisions", total_decisions)
-    col2.metric("High Confidence", high_confidence)
-    col3.metric("Follow-up Actions", total_followups)
-    col4.metric("Human Review Items", human_review_count)
-    col5.metric("Avg Bayes Score", f"{average_bayes_score}%")
+    col1.metric("Records", record_summary["total"])
+    col2.metric("Ready", record_summary["ready"])
+    col3.metric("Needs Cleanup", record_summary["review"] + record_summary["incomplete"])
+    col4.metric("Follow-ups", total_followups)
+    col5.metric("Quality", f'{record_summary["average_quality_score"]}%')
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         [
-            "Summary",
-            "Decision Records",
-            "Ask DecisionVault",
+            "Overview",
+            "Review Records",
+            "Ask",
             "Saved Vault",
             "Human Review",
-            "Raw Input"
+            "Source Text"
         ]
     )
 
@@ -1020,102 +1513,177 @@ if "decision_result" in st.session_state:
     # =========================
 
     with tab1:
-        st.subheader("Executive Summary")
-        st.write(result.get("executive_summary", "No summary available."))
+        with st.container(border=True):
+            st.markdown('<div class="dv-section-title">Executive Summary</div>', unsafe_allow_html=True)
+            st.write(result.get("executive_summary", "No summary available."))
 
-        st.markdown("### What this means")
-        st.write(
-            "DecisionVault AI has extracted structured decision memory from messy workplace communication. "
-            "These records can later be reused by teams or AI agents to understand what was decided, why it was decided, "
-            "who owns the next step, and what context should be remembered."
-        )
+        overview_col1, overview_col2 = st.columns(2)
+        with overview_col1:
+            with st.container(border=True):
+                st.markdown('<div class="dv-section-title">What Was Captured</div>', unsafe_allow_html=True)
+                st.markdown(
+                    "- Business choice\n"
+                    "- Decision rationale\n"
+                    "- Owner and approver context\n"
+                    "- Workflow impact\n"
+                    "- Dependencies and evidence"
+                )
+        with overview_col2:
+            with st.container(border=True):
+                st.markdown('<div class="dv-section-title">Next Step</div>', unsafe_allow_html=True)
+                st.write(
+                    "Open Review Records, clean up any extracted fields, then save the records "
+                    "you want to keep in the local vault."
+                )
 
     # =========================
     # Tab 2: Decision Records
     # =========================
 
     with tab2:
-        st.subheader("Decision Records")
+        st.markdown('<div class="dv-section-title">Decision Records</div>', unsafe_allow_html=True)
 
         if decision_records:
+            st.markdown(
+                '<div class="dv-section-title">Review and Edit Before Saving</div>',
+                unsafe_allow_html=True
+            )
+            st.caption(
+                "Edit any extracted fields before exporting or saving. For list fields, "
+                "use one item per line."
+            )
+            edited_df = st.data_editor(
+                prepare_records_for_editor(decision_records),
+                use_container_width=True,
+                num_rows="fixed",
+                hide_index=True,
+                key="decision_records_editor"
+            )
+            decision_records = records_from_editor(edited_df)
+
             for idx, record in enumerate(decision_records, 1):
-                st.markdown(f"### Decision {idx}: {record.get('decision', 'N/A')}")
-
-                col_a, col_b = st.columns(2)
-
-                with col_a:
-                    st.markdown(f"**Type:** {record.get('decision_type', 'N/A')}")
-                    st.markdown(f"**Reason:** {record.get('reason', 'N/A')}")
-                    st.markdown(f"**Owner:** {record.get('owner', 'N/A')}")
-                    st.markdown(f"**Approver:** {record.get('approver', 'N/A')}")
+                with st.container(border=True):
+                    confidence = record.get("confidence", "N/A")
+                    bayes_level = record.get("bayesian_confidence_level", "N/A")
+                    chip_class = confidence_chip_class(confidence)
+                    quality_level = record.get("record_quality_level", "Review")
+                    quality_class = quality_chip_class(quality_level)
+                    missing_fields = record.get("record_missing_fields", [])
                     st.markdown(
-                        f"**Affected Project/Workflow:** "
-                        f"{record.get('affected_project_or_workflow', 'N/A')}"
+                        f"""
+                        <div class="dv-decision-heading">
+                            <div class="dv-number">{idx}</div>
+                            <div>
+                                <div class="dv-decision-title">{html_text(record.get('decision', 'N/A'))}</div>
+                                <div class="dv-chip-row">
+                                    <span class="dv-chip">{html_text(record.get('decision_type', 'Other'))}</span>
+                                    <span class="dv-chip {chip_class}">Confidence: {html_text(confidence)}</span>
+                                    <span class="dv-chip">Bayes: {html_text(record.get('bayesian_confidence_score', 'N/A'))}% ({html_text(bayes_level)})</span>
+                                    <span class="dv-chip {quality_class}">Record: {html_text(quality_level)} · {html_text(record.get('record_quality_score', 0))}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
                     )
 
-                with col_b:
-                    st.markdown(f"**Confidence:** {record.get('confidence', 'N/A')}")
-                    st.markdown(
-                        f"**Bayesian Confidence:** "
-                        f"{record.get('bayesian_confidence_score', 'N/A')}% "
-                        f"({record.get('bayesian_confidence_level', 'N/A')})"
-                    )
-                    st.markdown(f"**Reusable Context:** {record.get('reusable_context', 'N/A')}")
+                    if missing_fields:
+                        st.warning(
+                            "Missing review fields: "
+                            + ", ".join(field.replace("_", " ") for field in missing_fields)
+                        )
 
-                    bayes_factors = record.get("bayesian_confidence_factors", [])
-                    if bayes_factors:
-                        with st.expander("Why this Bayesian score?"):
-                            for factor in bayes_factors:
-                                st.markdown(f"- {factor}")
+                    col_a, col_b = st.columns(2)
 
-                dependencies = record.get("dependencies_or_conditions", [])
-                followups = record.get("follow_up_actions", [])
-                evidence = record.get("source_evidence", [])
+                    with col_a:
+                        st.markdown(
+                            f"""
+                            <div class="dv-field-label">Reason</div>
+                            <div class="dv-field-value">{html_text(record.get('reason', 'N/A'))}</div>
+                            <div class="dv-field-label">Owner</div>
+                            <div class="dv-field-value">{html_text(record.get('owner', 'N/A'))}</div>
+                            <div class="dv-field-label">Approver</div>
+                            <div class="dv-field-value">{html_text(record.get('approver', 'N/A'))}</div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
-                st.markdown("**Dependencies / Conditions:**")
-                if dependencies:
-                    for dep in dependencies:
-                        st.markdown(f"- {dep}")
-                else:
-                    st.markdown("- N/A")
+                    with col_b:
+                        st.markdown(
+                            f"""
+                            <div class="dv-field-label">Affected Project / Workflow</div>
+                            <div class="dv-field-value">{html_text(record.get('affected_project_or_workflow', 'N/A'))}</div>
+                            <div class="dv-field-label">Reusable Context</div>
+                            <div class="dv-field-value">{html_text(record.get('reusable_context', 'N/A'))}</div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
-                st.markdown("**Follow-up Actions:**")
-                if followups:
-                    for action in followups:
-                        st.markdown(f"- {action}")
-                else:
-                    st.markdown("- N/A")
+                        bayes_factors = record.get("bayesian_confidence_factors", [])
+                        if bayes_factors:
+                            with st.expander("Why this Bayesian score?"):
+                                for factor in bayes_factors:
+                                    st.markdown(f"- {factor}")
 
-                st.markdown("**Source Evidence:**")
-                if evidence:
-                    for src in evidence:
-                        st.markdown(f"- {src}")
-                else:
-                    st.markdown("- N/A")
+                    dependencies = record.get("dependencies_or_conditions", [])
+                    followups = record.get("follow_up_actions", [])
+                    evidence = record.get("source_evidence", [])
 
-                st.divider()
+                    detail_col1, detail_col2, detail_col3 = st.columns(3)
+                    with detail_col1:
+                        st.markdown("**Dependencies / Conditions**")
+                        if dependencies:
+                            for dep in dependencies:
+                                st.markdown(f"- {dep}")
+                        else:
+                            st.markdown("- N/A")
+
+                    with detail_col2:
+                        st.markdown("**Follow-up Actions**")
+                        if followups:
+                            for action in followups:
+                                st.markdown(f"- {action}")
+                        else:
+                            st.markdown("- N/A")
+
+                    with detail_col3:
+                        st.markdown("**Source Evidence**")
+                        if evidence:
+                            for src in evidence:
+                                st.markdown(f"- {src}")
+                        else:
+                            st.markdown("- N/A")
 
             df = pd.DataFrame(decision_records)
             csv = df.to_csv(index=False).encode("utf-8")
             excel = convert_dataframe_to_excel(df)
 
-            st.download_button(
-                label="Download Current Decision Records as CSV",
-                data=csv,
-                file_name="decision_records.csv",
-                mime="text/csv"
-            )
+            save_col, csv_col, excel_col = st.columns(3)
 
-            st.download_button(
-                label="Download Current Decision Records as Excel",
-                data=excel,
-                file_name="decision_records.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            with save_col:
+                save_clicked = st.button(
+                    "Save Reviewed Records",
+                    type="primary",
+                    use_container_width=True
+                )
+            with csv_col:
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name="decision_records.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with excel_col:
+                st.download_button(
+                    label="Download Excel",
+                    data=excel,
+                    file_name="decision_records.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
-            st.markdown("---")
-
-            if st.button("Save Decision Records to Vault"):
+            if save_clicked:
                 saved_count, duplicate_count, duplicate_records = save_decisions_to_vault(
                     decision_records
                 )

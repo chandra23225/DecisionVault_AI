@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DecisionVault AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">DV</div>
+        <div>
+          <strong>DecisionVault AI</strong>
+          <span>Decision memory workspace</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a class="{{ 'active' if active_view == 'extract' else '' }}" href="{{ url_for('index') }}">Extract</a>
+        <a class="{{ 'active' if active_view == 'review' else '' }}" href="{{ url_for('review_page') }}">Review</a>
+        <a class="{{ 'active' if active_view == 'ask' else '' }}" href="{{ url_for('ask_page') }}">Ask</a>
+        <a class="{{ 'active' if active_view == 'vault' else '' }}" href="{{ url_for('vault_page') }}">Vault</a>
+      </nav>
+
+      <div class="sidebar-card">
+        <span class="eyebrow">Saved Memory</span>
+        <strong>{{ saved_summary.total }} records</strong>
+        <small>{{ saved_summary.ready }} ready · {{ saved_summary.review + saved_summary.incomplete }} need cleanup</small>
+      </div>
+
+      <div class="sidebar-note">
+        Avoid sensitive or regulated data unless your Gemini/API setup is approved.
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="hero">
+        <div>
+          <span class="pill">Local AI Workspace</span>
+          <h1>Turn scattered conversations into reusable decision memory.</h1>
+          <p>Upload source evidence, extract structured decisions, review the records, and save the useful context into your local vault.</p>
+        </div>
+        <div class="hero-card">
+          <span>Workspace Quality</span>
+          <strong>{{ record_summary.average_quality_score }}%</strong>
+          <small>{{ record_summary.ready }} ready records in current workspace</small>
+        </div>
+      </header>
+
+      {% if message %}
+        <div class="notice success">{{ message }}</div>
+      {% endif %}
+      {% if error %}
+        <div class="notice error">{{ error }}</div>
+      {% endif %}
+
+      {% if active_view == "extract" %}
+      <section class="grid two">
+        <form class="panel upload-panel" method="post" action="{{ url_for('extract') }}" enctype="multipart/form-data">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Step 1</span>
+              <h2>Add source evidence</h2>
+            </div>
+            <span class="soft-badge">txt · md · csv</span>
+          </div>
+          <label class="dropzone">
+            <input type="file" name="source_files" multiple accept=".txt,.md,.csv">
+            <strong>Select files</strong>
+            <span>Upload workplace notes, chat threads, emails, markdown, or CSV exports.</span>
+          </label>
+          <div class="helper-row">
+            <span>Per file: {{ max_upload_mb }} MB</span>
+            <span>Total: {{ max_total_upload_mb }} MB</span>
+          </div>
+          <button class="primary-button" type="submit">Generate Decision Memory</button>
+        </form>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Snapshot</span>
+              <h2>Current workspace</h2>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span>Records</span><strong>{{ record_summary.total }}</strong></div>
+            <div class="metric"><span>Ready</span><strong>{{ record_summary.ready }}</strong></div>
+            <div class="metric"><span>Needs cleanup</span><strong>{{ record_summary.review + record_summary.incomplete }}</strong></div>
+            <div class="metric"><span>Quality</span><strong>{{ record_summary.average_quality_score }}%</strong></div>
+          </div>
+          <form method="post" action="{{ url_for('clear_current') }}">
+            <button class="secondary-button" type="submit">Clear current workspace</button>
+          </form>
+        </section>
+      </section>
+      {% endif %}
+
+      {% if active_view == "review" %}
+      {% if result %}
+        <form id="review" method="post">
+          <input type="hidden" name="record_count" value="{{ records|length }}">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Step 2</span>
+                <h2>Review extracted records</h2>
+              </div>
+              <div class="button-row">
+                <button class="secondary-button" formaction="{{ url_for('update_current') }}" type="submit">Update records</button>
+                <button class="primary-button" formaction="{{ url_for('save_current') }}" type="submit">Save to vault</button>
+              </div>
+            </div>
+
+            <div class="summary-box">
+              <strong>Executive summary</strong>
+              <p>{{ result.executive_summary or "No summary available." }}</p>
+            </div>
+
+            <div class="records">
+              {% for record in records %}
+                {% set i = loop.index0 %}
+                <article class="record-card">
+                  <div class="record-top">
+                    <div>
+                      <span class="record-index">{{ loop.index }}</span>
+                      <input name="decision_{{ i }}" value="{{ record.decision }}" class="title-input">
+                    </div>
+                    <div class="chip-row">
+                      <span class="chip">{{ record.decision_type or "Other" }}</span>
+                      <span class="chip {{ record.confidence|lower }}">Confidence: {{ record.confidence or "N/A" }}</span>
+                      <span class="chip">Quality: {{ record.record_quality_level }} · {{ record.record_quality_score }}%</span>
+                    </div>
+                  </div>
+
+                  {% if record.record_missing_fields %}
+                    <div class="warning-strip">Missing: {{ record.record_missing_fields|join(", ") }}</div>
+                  {% endif %}
+
+                  <div class="form-grid">
+                    <label>Type<input name="decision_type_{{ i }}" value="{{ record.decision_type }}"></label>
+                    <label>Confidence<input name="confidence_{{ i }}" value="{{ record.confidence }}"></label>
+                    <label>Owner<input name="owner_{{ i }}" value="{{ record.owner }}"></label>
+                    <label>Approver<input name="approver_{{ i }}" value="{{ record.approver }}"></label>
+                    <label class="wide">Workflow<input name="workflow_{{ i }}" value="{{ record.affected_project_or_workflow }}"></label>
+                    <label class="wide">Reason<textarea name="reason_{{ i }}">{{ record.reason }}</textarea></label>
+                    <label class="wide">Reusable context<textarea name="reusable_context_{{ i }}">{{ record.reusable_context }}</textarea></label>
+                    <label>Dependencies<textarea name="dependencies_{{ i }}">{{ record.dependencies_or_conditions|join("\n") }}</textarea></label>
+                    <label>Follow-ups<textarea name="followups_{{ i }}">{{ record.follow_up_actions|join("\n") }}</textarea></label>
+                    <label>Evidence<textarea name="evidence_{{ i }}">{{ record.source_evidence|join("\n") }}</textarea></label>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+
+            <div class="button-row footer-actions">
+              <a class="link-button" href="{{ url_for('export_records', scope='current', file_type='csv') }}">Export current CSV</a>
+              <a class="link-button" href="{{ url_for('export_records', scope='current', file_type='xlsx') }}">Export current Excel</a>
+            </div>
+          </section>
+        </form>
+      {% else %}
+        <section class="empty-state">
+          <strong>No current extraction yet</strong>
+          <span>Add files on the Extract page and generate decision memory to start reviewing records.</span>
+          <a class="link-button" href="{{ url_for('index') }}">Go to Extract</a>
+        </section>
+      {% endif %}
+      {% endif %}
+
+      {% if active_view == "ask" %}
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Question Answering</span>
+            <h2>Ask the current memory</h2>
+          </div>
+        </div>
+
+        {% if result %}
+          <form method="post" action="{{ url_for('ask_question') }}">
+            <input type="hidden" name="record_count" value="{{ records|length }}">
+            {% for record in records %}
+              {% set i = loop.index0 %}
+              <input type="hidden" name="decision_{{ i }}" value="{{ record.decision }}">
+              <input type="hidden" name="decision_type_{{ i }}" value="{{ record.decision_type }}">
+              <input type="hidden" name="reason_{{ i }}" value="{{ record.reason }}">
+              <input type="hidden" name="owner_{{ i }}" value="{{ record.owner }}">
+              <input type="hidden" name="approver_{{ i }}" value="{{ record.approver }}">
+              <input type="hidden" name="workflow_{{ i }}" value="{{ record.affected_project_or_workflow }}">
+              <input type="hidden" name="dependencies_{{ i }}" value="{{ record.dependencies_or_conditions|join('\n') }}">
+              <input type="hidden" name="followups_{{ i }}" value="{{ record.follow_up_actions|join('\n') }}">
+              <input type="hidden" name="evidence_{{ i }}" value="{{ record.source_evidence|join('\n') }}">
+              <input type="hidden" name="confidence_{{ i }}" value="{{ record.confidence }}">
+              <input type="hidden" name="reusable_context_{{ i }}" value="{{ record.reusable_context }}">
+            {% endfor %}
+            <div class="ask-row">
+              <input name="question" placeholder="Example: Why was the launch delayed?">
+              <button class="primary-button" type="submit">Ask</button>
+            </div>
+          </form>
+
+          {% if answer %}
+            <section class="answer-card">
+              <div class="answer-header">
+                <div>
+                  <span class="eyebrow">Answer</span>
+                  <h3>{{ last_question }}</h3>
+                </div>
+                <span class="answer-status {{ answer.answer_status|lower|replace(' ', '-') }}">
+                  {{ answer.answer_status }}
+                </span>
+              </div>
+
+              <div class="direct-answer">
+                {{ answer.direct_answer }}
+              </div>
+
+              {% if answer.key_points %}
+                <div class="answer-section">
+                  <h4>Key Points</h4>
+                  <ul class="clean-list">
+                    {% for point in answer.key_points %}
+                      <li>{{ point }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+
+              {% if answer.supporting_records %}
+                <div class="answer-section">
+                  <h4>Supporting Records</h4>
+                  <div class="support-grid">
+                    {% for supporting_record in answer.supporting_records %}
+                      <article class="support-card">
+                        <strong>{{ supporting_record.decision or "Referenced decision" }}</strong>
+                        <span>{{ supporting_record.workflow or "Workflow not specified" }}</span>
+                        <span>{{ supporting_record.owner or "Owner not specified" }}</span>
+                        {% if supporting_record.evidence %}
+                          <ul>
+                            {% for evidence in supporting_record.evidence %}
+                              <li>{{ evidence }}</li>
+                            {% endfor %}
+                          </ul>
+                        {% endif %}
+                      </article>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endif %}
+
+              {% if answer.information_gaps %}
+                <div class="answer-section muted-section">
+                  <h4>Information Gaps</h4>
+                  <ul class="clean-list">
+                    {% for gap in answer.information_gaps %}
+                      <li>{{ gap }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+
+              {% if answer.recommended_next_steps %}
+                <div class="answer-section next-section">
+                  <h4>Recommended Next Steps</h4>
+                  <ul class="clean-list">
+                    {% for step in answer.recommended_next_steps %}
+                      <li>{{ step }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+            </section>
+          {% endif %}
+        {% else %}
+          <div class="empty-state small">
+            <strong>No current decision memory</strong>
+            <span>Generate records before asking questions.</span>
+            <a class="link-button" href="{{ url_for('index') }}">Go to Extract</a>
+          </div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if active_view == "vault" %}
+      <section id="vault" class="panel">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Saved Memory</span>
+            <h2>Decision vault</h2>
+          </div>
+          <div class="button-row">
+            <a class="link-button" href="{{ url_for('export_records', scope='saved', file_type='csv') }}">Vault CSV</a>
+            <a class="link-button" href="{{ url_for('export_records', scope='saved', file_type='xlsx') }}">Vault Excel</a>
+          </div>
+        </div>
+
+        {% if saved_records %}
+          <div class="vault-list">
+            {% for record in saved_records %}
+              <article class="vault-row">
+                <div>
+                  <strong>{{ record.decision_id or "No ID" }} · {{ record.decision }}</strong>
+                  <span>{{ record.affected_project_or_workflow or "No workflow" }} · {{ record.record_quality_level }} · {{ record.bayesian_confidence_score }}%</span>
+                </div>
+                <form method="post" action="{{ url_for('delete_saved', decision_id=record.decision_id) }}">
+                  <button class="danger-button" type="submit">Delete</button>
+                </form>
+              </article>
+            {% endfor %}
+          </div>
+          <form method="post" action="{{ url_for('clear_vault') }}">
+            <button class="danger-button" type="submit">Clear vault</button>
+          </form>
+        {% else %}
+          <div class="empty-state small">
+            <strong>No saved decisions yet</strong>
+            <span>Reviewed records will appear here after you save them.</span>
+          </div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if combined_text and active_view in ["review", "ask"] %}
+        <details class="source-details">
+          <summary>View uploaded source text</summary>
+          <pre>{{ combined_text }}</pre>
+        </details>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

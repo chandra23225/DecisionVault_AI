@@ -26,6 +26,7 @@ DecisionVault AI addresses that gap by turning unstructured communication into r
 
 - Extracts structured business decisions from meeting notes, Slack-style threads, emails, project notes, and CSV/text exports
 - Captures decision rationale, owner, approver, affected workflow, dependencies, source evidence, confidence, and reusable context
+- Lets users review and edit extracted decision records before saving them
 - Saves extracted records into a local decision vault
 - Lets users ask questions across current extraction results or saved decision history
 - Prevents simple duplicate saves
@@ -96,9 +97,59 @@ DECISION_VAULT_FILE=data/decision_vault.json
 python -m streamlit run app.py
 ```
 
-## Demo Files
+## Run As Desktop App
 
-For a quick demo, upload these files together:
+DecisionVault AI can also run in a native desktop window. Streamlit still runs
+locally in the background, but you do not need to use a browser tab.
+
+```powershell
+python desktop_app.py
+```
+
+On Windows, you can also double-click:
+
+```text
+launch_decisionvault.bat
+```
+
+## Run Without Streamlit
+
+The custom app version uses Flask plus normal HTML/CSS instead of Streamlit.
+This gives more control over layout, styling, and desktop packaging.
+
+Run it in a browser:
+
+```powershell
+python flask_app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5050
+```
+
+Run it in a desktop window:
+
+```powershell
+python desktop_flask_app.py
+```
+
+On Windows, you can also double-click:
+
+```text
+launch_decisionvault_custom.bat
+```
+
+If dependencies are missing, install them first:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+## Example Files
+
+For a quick example workflow, upload these files together:
 
 - `meeting_notes.txt`
 - `slack_thread.txt`
@@ -106,7 +157,7 @@ For a quick demo, upload these files together:
 
 Then click **Generate Decision Memory**.
 
-For a more realistic workplace-style demo, upload files from `sample_data/`:
+For a more realistic workplace-style example, upload files from `sample_data/`:
 
 - `sample_data/real_meeting_notes_anonymized.txt`
 - `sample_data/real_slack_thread_anonymized.txt`
@@ -169,11 +220,28 @@ Current MVP capabilities:
 
 - upload `.txt`, `.md`, and `.csv` files
 - extract decision records with Gemini
+- review and edit extracted records before export or save
 - save records locally in `decision_vault.json`
 - search current records and saved vault records
 - prevent simple duplicate saves
 - export CSV and Excel files
 - review low-confidence or ambiguous items
+
+## Project Structure
+
+```text
+app.py                    Streamlit UI and Gemini prompts
+decisionvault/            Reusable validation, storage, confidence, and JSON helpers
+tests/                    Focused unit tests for core non-UI behavior
+sample_data/              Anonymized example inputs
+assets/                   README screenshots
+```
+
+## Run Tests
+
+```powershell
+python -m unittest discover -s tests
+```
 
 Not production-ready yet:
 
