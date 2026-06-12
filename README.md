@@ -1,67 +1,91 @@
 # DecisionVault AI
 
-DecisionVault AI is a GenAI-powered decision memory layer for teams and AI agents. It turns messy workplace communication into structured, reusable decision records.
+DecisionVault AI is a GenAI-powered decision memory workspace that turns messy workplace communication into structured, reusable decision records.
 
-Instead of only summarizing meetings, DecisionVault AI extracts what was decided, why it was decided, who owns the next step, who approved it, what workflow it affects, and what evidence supports it.
+It is built for teams and AI agents that need more than meeting summaries. DecisionVault AI extracts what was decided, why it was decided, who owns the next step, who approved it, what workflow it affects, and what evidence supports it.
 
-![DecisionVault AI overview](assets/decisionvault-overview.jpg)
+![DecisionVault AI extract workspace](assets/decisionvault-flask-extract.jpg)
 
-## Product Positioning
-
-DecisionVault AI is designed as an out-of-the-box decision memory MVP:
+## Product Focus
 
 ```text
-messy workplace communication -> structured decision records -> searchable decision vault
+messy workplace communication -> reviewed decision records -> searchable decision vault
 ```
 
-It is not just a meeting summarizer. The product focuses on durable business context that teams and AI agents can reuse later.
+DecisionVault AI focuses on durable business context. It helps convert scattered meetings, Slack-style threads, email discussions, incident notes, project updates, and CSV/text exports into decision memory that can be reviewed, saved, searched, and reused.
 
-## Why This Matters Now
+## Current App Experience
 
-Modern teams make decisions across meetings, Slack-style threads, email, project notes, incident reviews, and planning documents. The decision itself often gets buried, while the reasoning, owner, approver, and dependencies become difficult to recover later.
+The primary app is now a custom Flask + HTML/CSS interface rather than a Streamlit-only UI. This gives the project more control over layout, navigation, review workflows, and desktop packaging.
 
-DecisionVault AI addresses that gap by turning unstructured communication into reusable decision records with source evidence and confidence levels.
+Current views:
+
+- **Extract**: upload source files and generate structured decision memory
+- **Review**: edit extracted records before saving them
+- **Ask**: ask professional, structured questions over the current decision memory
+- **Vault**: manage saved decision records in local storage
+
+## Screenshots
+
+### Extract Workspace
+
+![DecisionVault AI extract workspace](assets/decisionvault-flask-extract.jpg)
+
+### Review Records
+
+![DecisionVault AI review workspace](assets/decisionvault-flask-review.jpg)
+
+### Ask Decision Memory
+
+![DecisionVault AI ask workspace](assets/decisionvault-flask-ask.jpg)
+
+### Saved Vault
+
+![DecisionVault AI saved vault](assets/decisionvault-flask-vault.jpg)
 
 ## What It Does
 
 - Extracts structured business decisions from meeting notes, Slack-style threads, emails, project notes, and CSV/text exports
 - Captures decision rationale, owner, approver, affected workflow, dependencies, source evidence, confidence, and reusable context
+- Scores each record for completeness using review-ready quality signals
 - Lets users review and edit extracted decision records before saving them
-- Saves extracted records into a local decision vault
-- Lets users ask questions across current extraction results or saved decision history
+- Saves reviewed records into a local decision vault
+- Provides structured Ask results with direct answers, key points, supporting records, information gaps, and next steps
 - Prevents simple duplicate saves
 - Exports current and saved records as CSV or Excel
-- Flags ambiguous items for human review
+- Flags ambiguous or incomplete records for human review
 
-## What Makes The GenAI Focus Different
+## Structured Ask Results
 
-DecisionVault AI uses GenAI to interpret messy human communication and identify decisions that are not always written in a clean format. The focus is on extracting:
+The Ask page is designed to feel more like a decision-intelligence result than a chatbot response. Answers include:
 
-- the actual business choice
-- the reason behind it
-- owner and approver context
-- dependencies and conditions
-- source evidence
-- confidence level
-- reusable context for future teams or AI agents
+- answer status: answered, partially answered, or not available
+- direct executive-style answer
+- key points
+- supporting decision records
+- information gaps
+- recommended next steps
 
-This makes the app more decision-memory oriented than a generic summarizer.
+This keeps answers grounded in saved or current decision records and makes missing context explicit.
 
 ## Saved Decision Vault
 
-The saved vault turns one-off extraction into reusable organizational memory. Users can search previous decisions, filter records by keyword, confidence, or project/workflow, and download filtered or full vault exports.
+The saved vault turns one-off extraction into reusable organizational memory. Users can save reviewed records, inspect saved decisions, delete outdated records, and export the vault.
 
-![DecisionVault AI saved vault](assets/decisionvault-saved-vault.jpg)
+![DecisionVault AI saved vault](assets/decisionvault-flask-vault.jpg)
 
 ## Tech Stack
 
 - Python
-- Streamlit
+- Flask
+- Custom HTML/CSS frontend
 - Gemini 2.5 Flash through `google-genai`
+- `pywebview` desktop wrapper
 - `python-dotenv`
 - pandas
 - openpyxl
 - Local JSON storage
+- Streamlit legacy UI kept in `app.py`
 
 ## Setup
 
@@ -84,40 +108,15 @@ Create a `.env` file in the project folder:
 GEMINI_API_KEY=your_api_key_here
 ```
 
-For Streamlit deployment, you can also set `GEMINI_API_KEY` in Streamlit secrets.
 The local vault file can be changed with:
 
 ```text
 DECISION_VAULT_FILE=data/decision_vault.json
 ```
 
-## Run Locally
+## Run The Custom App
 
-```powershell
-python -m streamlit run app.py
-```
-
-## Run As Desktop App
-
-DecisionVault AI can also run in a native desktop window. Streamlit still runs
-locally in the background, but you do not need to use a browser tab.
-
-```powershell
-python desktop_app.py
-```
-
-On Windows, you can also double-click:
-
-```text
-launch_decisionvault.bat
-```
-
-## Run Without Streamlit
-
-The custom app version uses Flask plus normal HTML/CSS instead of Streamlit.
-This gives more control over layout, styling, and desktop packaging.
-
-Run it in a browser:
+Run the non-Streamlit app:
 
 ```powershell
 python flask_app.py
@@ -129,7 +128,9 @@ Then open:
 http://127.0.0.1:5050
 ```
 
-Run it in a desktop window:
+## Run As Desktop App
+
+Run the custom app in a desktop window:
 
 ```powershell
 python desktop_flask_app.py
@@ -141,10 +142,18 @@ On Windows, you can also double-click:
 launch_decisionvault_custom.bat
 ```
 
-If dependencies are missing, install them first:
+## Optional Streamlit Legacy App
+
+The earlier Streamlit version is still available:
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
+
+Desktop wrapper for the Streamlit version:
+
+```powershell
+python desktop_app.py
 ```
 
 ## Example Files
@@ -155,8 +164,6 @@ For a quick example workflow, upload these files together:
 - `slack_thread.txt`
 - `email_thread.txt`
 
-Then click **Generate Decision Memory**.
-
 For a more realistic workplace-style example, upload files from `sample_data/`:
 
 - `sample_data/real_meeting_notes_anonymized.txt`
@@ -164,7 +171,7 @@ For a more realistic workplace-style example, upload files from `sample_data/`:
 - `sample_data/real_email_thread_anonymized.txt`
 - `sample_data/incident_decisions_anonymized.csv`
 
-These files are anonymized examples that mimic real decision-heavy workplace communication.
+These files are anonymized examples that mimic decision-heavy workplace communication.
 
 ## Upload Safety
 
@@ -177,9 +184,7 @@ DecisionVault AI validates uploads before sending text to Gemini:
 - requires UTF-8 readable text
 - validates that `.csv` files contain usable CSV rows
 
-This MVP does not include antivirus or malware scanning. A public or enterprise
-deployment should add an antivirus service such as ClamAV or a cloud file
-scanning service before processing uploaded files.
+This version does not include antivirus or malware scanning. A public or enterprise deployment should add an antivirus service such as ClamAV or a cloud file scanning service before processing uploaded files.
 
 ## Local Storage
 
@@ -189,52 +194,24 @@ Saved decisions are stored in:
 decision_vault.json
 ```
 
-You can override this path with `DECISION_VAULT_FILE` in `.env` or Streamlit
-secrets.
+You can override this path with `DECISION_VAULT_FILE` in `.env`.
 
-This keeps the MVP simple and easy to inspect. A production or team version should move this storage to SQLite, Postgres, or another managed database.
-
-## Deployment
-
-The fastest deployment path is Streamlit Community Cloud:
-
-1. Connect this GitHub repository.
-2. Set `GEMINI_API_KEY` as a Streamlit secret.
-3. Deploy `app.py`.
-
-Render, Railway, Azure, or other Python-friendly hosts can also run the app with:
-
-```powershell
-python -m streamlit run app.py
-```
-
-## MVP Scope
-
-This version intentionally avoids real Slack, Jira, Gmail, or document management integrations. The goal is to validate the decision-memory workflow first:
-
-```text
-messy workplace text -> structured decision records -> saved searchable vault
-```
-
-Current MVP capabilities:
-
-- upload `.txt`, `.md`, and `.csv` files
-- extract decision records with Gemini
-- review and edit extracted records before export or save
-- save records locally in `decision_vault.json`
-- search current records and saved vault records
-- prevent simple duplicate saves
-- export CSV and Excel files
-- review low-confidence or ambiguous items
+This keeps the project simple and easy to inspect. A production or team version should move storage to SQLite, Postgres, or another managed database.
 
 ## Project Structure
 
 ```text
-app.py                    Streamlit UI and Gemini prompts
-decisionvault/            Reusable validation, storage, confidence, and JSON helpers
-tests/                    Focused unit tests for core non-UI behavior
-sample_data/              Anonymized example inputs
-assets/                   README screenshots
+flask_app.py                      Custom Flask app
+templates/index.html              Custom app UI
+static/styles.css                 Custom app styling
+desktop_flask_app.py              Desktop wrapper for the custom app
+launch_decisionvault_custom.bat   Windows launcher for the custom app
+app.py                            Legacy Streamlit app
+desktop_app.py                    Desktop wrapper for the Streamlit app
+decisionvault/                    Reusable validation, storage, confidence, extraction, and UI view-model helpers
+tests/                            Unit tests for core non-UI behavior
+sample_data/                      Anonymized example inputs
+assets/                           README screenshots
 ```
 
 ## Run Tests
@@ -242,6 +219,20 @@ assets/                   README screenshots
 ```powershell
 python -m unittest discover -s tests
 ```
+
+## Current Scope
+
+Current capabilities:
+
+- upload `.txt`, `.md`, and `.csv` files
+- extract decision records with Gemini
+- review and edit extracted records before export or save
+- score record completeness with backend quality signals
+- save records locally in `decision_vault.json`
+- ask structured questions over current decision memory
+- manage saved vault records
+- prevent simple duplicate saves
+- export CSV and Excel files
 
 Not production-ready yet:
 
