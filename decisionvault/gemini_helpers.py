@@ -7,6 +7,12 @@ class GeminiJSONError(Exception):
         self.raw_response = raw_response
 
 
+class GeminiAPIError(Exception):
+    def __init__(self, message, original_error=None):
+        super().__init__(message)
+        self.original_error = original_error
+
+
 def extract_json_from_response(raw_text):
     raw_text = raw_text.strip()
 

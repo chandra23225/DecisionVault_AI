@@ -1,6 +1,7 @@
 import unittest
 
 from decisionvault.extraction import ask_decision_vault_with_client
+from decisionvault.gemini_helpers import GeminiAPIError
 
 
 class FakeResponse:
@@ -19,6 +20,16 @@ class FakeModels:
 class FakeClient:
     def __init__(self, text):
         self.models = FakeModels(text)
+
+
+class FailingModels:
+    def generate_content(self, **kwargs):
+        raise RuntimeError("quota exceeded")
+
+
+class FailingClient:
+    def __init__(self):
+        self.models = FailingModels()
 
 
 class ExtractionTests(unittest.TestCase):
@@ -50,6 +61,14 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(answer["answer_status"], "Answered")
         self.assertEqual(answer["direct_answer"], "Plain answer")
         self.assertEqual(answer["supporting_records"], [])
+
+    def test_ask_wraps_gemini_client_errors(self):
+        client = FailingClient()
+
+        with self.assertRaises(GeminiAPIError) as context:
+            ask_decision_vault_with_client(client, "Why?", [])
+
+        self.assertIn("quota exceeded", str(context.exception))
 
 
 if __name__ == "__main__":

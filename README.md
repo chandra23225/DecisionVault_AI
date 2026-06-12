@@ -264,12 +264,14 @@ This keeps the project simple and easy to inspect. A production or team version 
 ## Project Structure
 
 ```text
-flask_app.py                      Custom Flask app
+flask_app.py                      Custom Flask app entrypoint
+decisionvault/flask_app_core.py   Main Flask routes and app workflow
 templates/index.html              Custom app UI
 static/styles.css                 Custom app styling
 desktop_flask_app.py              Desktop wrapper for the custom app
 launch_decisionvault_custom.bat   Windows launcher for the custom app
-app.py                            Legacy Streamlit app
+app.py                            Legacy Streamlit entrypoint
+decisionvault/streamlit_app.py    Legacy Streamlit implementation
 desktop_app.py                    Desktop wrapper for the Streamlit app
 decisionvault/                    Reusable validation, storage, confidence, extraction, and UI view-model helpers
 tests/                            Unit tests for core non-UI behavior

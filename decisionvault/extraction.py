@@ -3,7 +3,7 @@ import json
 from google import genai
 from google.genai import types
 
-from decisionvault.gemini_helpers import GeminiJSONError, extract_json_from_response
+from decisionvault.gemini_helpers import GeminiAPIError, GeminiJSONError, extract_json_from_response
 
 
 EXTRACTION_MODEL = "gemini-2.5-flash"
@@ -93,13 +93,16 @@ def create_gemini_client(api_key):
 
 
 def extract_decisions_with_client(client, text):
-    response = client.models.generate_content(
-        model=EXTRACTION_MODEL,
-        contents=build_extraction_prompt(text),
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json"
+    try:
+        response = client.models.generate_content(
+            model=EXTRACTION_MODEL,
+            contents=build_extraction_prompt(text),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
-    )
+    except Exception as exc:
+        raise GeminiAPIError(f"Gemini request failed: {exc}", exc) from exc
 
     raw_output = response.text or ""
 
@@ -147,13 +150,16 @@ User Question:
 Give a clear, concise answer.
 """
 
-    response = client.models.generate_content(
-        model=EXTRACTION_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json"
+    try:
+        response = client.models.generate_content(
+            model=EXTRACTION_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
-    )
+    except Exception as exc:
+        raise GeminiAPIError(f"Gemini request failed: {exc}", exc) from exc
 
     raw_output = response.text or ""
 

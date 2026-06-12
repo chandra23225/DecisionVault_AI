@@ -24,3 +24,10 @@ Thumbs.db
 
 # Temporary polish folder
 github-polish/
+
+# Temporary local GitHub helper clones
+github-profile/
+github-workflows/
+
+# Local legacy/scratch copies kept outside release commits
+*_legacy.py
