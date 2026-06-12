@@ -25,6 +25,69 @@ Current views:
 - **Ask**: ask professional, structured questions over the current decision memory
 - **Vault**: manage saved decision records in local storage
 
+## Workflow
+
+```mermaid
+flowchart TD
+    A[User opens DecisionVault AI] --> B[Extract page]
+    B --> C[Upload source files<br/>TXT, Markdown, CSV]
+    C --> D{Upload validation}
+
+    D -->|Valid files| E[Combine source text<br/>with source-file markers]
+    D -->|Rejected files| D1[Show validation errors<br/>unsupported type, too large, empty,<br/>binary-looking, invalid UTF-8, bad CSV]
+    D1 --> C
+
+    E --> F[Gemini 2.5 Flash extraction]
+    F --> G[Structured decision memory JSON]
+
+    G --> H[Backend enrichment]
+    H --> H1[Bayesian confidence scoring]
+    H --> H2[Record quality scoring]
+    H --> H3[Missing-field detection]
+
+    H1 --> I[Review page]
+    H2 --> I
+    H3 --> I
+
+    I --> J[User reviews and edits records]
+    J --> K{Save reviewed records?}
+
+    K -->|Yes| L[Duplicate check<br/>decision + workflow]
+    K -->|No| M[Export current records<br/>CSV or Excel]
+
+    L -->|New record| N[Assign decision ID<br/>and saved timestamp]
+    L -->|Duplicate| O[Skip duplicate<br/>and report count]
+    N --> P[Local JSON decision vault]
+    O --> P
+
+    P --> Q[Vault page]
+    Q --> R[Inspect saved decisions]
+    Q --> S[Delete outdated records]
+    Q --> T[Export saved vault<br/>CSV or Excel]
+
+    J --> U[Ask page]
+    P --> U
+    U --> V[User asks a question]
+    V --> W[Gemini answers using only<br/>provided decision records]
+    W --> X[Structured answer result]
+    X --> X1[Direct answer]
+    X --> X2[Key points]
+    X --> X3[Supporting records]
+    X --> X4[Information gaps]
+    X --> X5[Recommended next steps]
+```
+
+### Workflow Summary
+
+1. **Upload evidence**: users add `.txt`, `.md`, or `.csv` files from meetings, threads, emails, notes, or exports.
+2. **Validate inputs**: the backend blocks unsupported, oversized, empty, binary-looking, invalid UTF-8, or unusable CSV files before anything is sent to Gemini.
+3. **Extract decisions**: Gemini turns the combined source text into structured decision records with rationale, owner, approver, workflow, dependencies, evidence, confidence, and reusable context.
+4. **Enrich records**: backend helpers add Bayesian confidence, record quality scores, and missing-field warnings.
+5. **Review before saving**: users edit records first, so AI output does not automatically become saved memory.
+6. **Save to vault**: reviewed records are deduplicated, assigned decision IDs, timestamped, and stored in a local JSON vault.
+7. **Ask and reuse**: users can ask questions over the current decision memory and receive structured answers with supporting records, gaps, and next steps.
+8. **Export when needed**: current records and saved vault records can be exported as CSV or Excel.
+
 ## Screenshots
 
 ### Extract Workspace
