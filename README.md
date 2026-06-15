@@ -34,6 +34,58 @@ The app now offers four primary views:
 - Ask: ask professional, structured questions over the current decision context
 - Vault: manage saved decision records locally
 
+## Workflow diagram
+
+```mermaid
+flowchart TD
+    A[User opens DecisionVault AI] --> B[Extract page]
+    B --> C[Upload source files<br/>TXT, Markdown, CSV]
+    C --> D{Upload validation}
+
+    D -->|Valid files| E[Combine source text<br/>with source-file markers]
+    D -->|Rejected files| D1[Show validation errors<br/>unsupported type, too large, empty,<br/>binary-looking, invalid UTF-8, bad CSV]
+    D1 --> C
+
+    E --> F[Gemini extraction]
+    F --> G[Structured decision memory JSON]
+
+    G --> H[Backend enrichment]
+    H --> H1[Bayesian confidence scoring]
+    H --> H2[Record quality scoring]
+    H --> H3[Missing-field detection]
+
+    H1 --> I[Review page]
+    H2 --> I
+    H3 --> I
+
+    I --> J[User reviews and edits records]
+    J --> K{Save reviewed records?}
+
+    K -->|Yes| L[Duplicate check<br/>decision + workflow]
+    K -->|No| M[Export current records<br/>CSV or Excel]
+
+    L -->|New record| N[Assign decision ID<br/>and saved timestamp]
+    L -->|Duplicate| O[Skip duplicate<br/>and report count]
+    N --> P[Local JSON decision vault]
+    O --> P
+
+    P --> Q[Vault page]
+    Q --> R[Inspect saved decisions]
+    Q --> S[Delete outdated records]
+    Q --> T[Export saved vault<br/>CSV or Excel]
+
+    J --> U[Ask page]
+    P --> U
+    U --> V[User asks a question]
+    V --> W[Gemini answers using only<br/>provided decision records]
+    W --> X[Structured answer result]
+    X --> X1[Direct answer]
+    X --> X2[Key points]
+    X --> X3[Supporting records]
+    X --> X4[Information gaps]
+    X --> X5[Recommended next steps]
+```
+
 ## Workflow
 
 1. Upload evidence from .txt, .md, or .csv files.
