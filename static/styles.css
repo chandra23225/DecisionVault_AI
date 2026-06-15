@@ -626,11 +626,142 @@ textarea {
   color: var(--ink);
 }
 
+.upload-summary {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.upload-summary strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.upload-summary ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.upload-summary .rejected {
+  color: #991b1b;
+}
+
+.review-help {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.review-help span {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 12px;
+  line-height: 1.4;
+}
+
+.prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.prompt-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--ink);
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.prompt-chip:hover {
+  border-color: var(--accent);
+  background: #ecfdf5;
+}
+
+.answer-source.reviewed-records {
+  color: #14532d;
+  border-color: #bbf7d0;
+}
+
+.answer-source.source-text {
+  color: #1e3a8a;
+  border-color: #bfdbfe;
+}
+
+.answer-source.both {
+  color: #7c2d12;
+  border-color: #fed7aa;
+}
+
+.vault-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.vault-row {
+  display: block;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.vault-row-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.vault-row-header span {
+  color: var(--muted);
+}
+
+.vault-edit-form {
+  margin-bottom: 12px;
+}
+
+.form-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.form-grid.compact textarea {
+  min-height: 74px;
+}
+
+.form-grid select,
+.vault-filter select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  background: #ffffff;
+}
+
 @media (max-width: 960px) {
   .app-shell,
   .hero,
   .grid.two,
-  .form-grid {
+  .form-grid,
+  .review-help,
+  .vault-filter {
     grid-template-columns: 1fr;
   }
 

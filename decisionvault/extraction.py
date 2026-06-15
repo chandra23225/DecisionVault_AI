@@ -1,4 +1,5 @@
 import json
+import time
 
 from google import genai
 from google.genai import types
@@ -7,6 +8,51 @@ from decisionvault.gemini_helpers import GeminiAPIError, GeminiJSONError, extrac
 
 
 EXTRACTION_MODEL = "gemini-2.5-flash"
+MAX_GEMINI_ATTEMPTS = 2
+
+
+def is_temporary_gemini_error(exc):
+    error_text = str(exc).lower()
+    return (
+        "503" in error_text
+        or "unavailable" in error_text
+        or "high demand" in error_text
+        or "temporarily" in error_text
+    )
+
+
+def get_friendly_gemini_error_message(exc):
+    if is_temporary_gemini_error(exc):
+        return (
+            "Gemini is temporarily overloaded. Please wait a minute and try again. "
+            "Your uploaded files and current workspace were not changed."
+        )
+
+    return f"Gemini request failed: {exc}"
+
+
+def generate_content_with_retry(client, *, contents, sleep_seconds=1):
+    last_error = None
+
+    for attempt in range(MAX_GEMINI_ATTEMPTS):
+        try:
+            return client.models.generate_content(
+                model=EXTRACTION_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+        except Exception as exc:
+            last_error = exc
+
+            if not is_temporary_gemini_error(exc) or attempt == MAX_GEMINI_ATTEMPTS - 1:
+                break
+
+            if sleep_seconds:
+                time.sleep(sleep_seconds)
+
+    raise GeminiAPIError(get_friendly_gemini_error_message(last_error), last_error)
 
 
 def build_extraction_prompt(text):
@@ -92,17 +138,12 @@ def create_gemini_client(api_key):
     return genai.Client(api_key=api_key)
 
 
-def extract_decisions_with_client(client, text):
-    try:
-        response = client.models.generate_content(
-            model=EXTRACTION_MODEL,
-            contents=build_extraction_prompt(text),
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-    except Exception as exc:
-        raise GeminiAPIError(f"Gemini request failed: {exc}", exc) from exc
+def extract_decisions_with_client(client, text, sleep_seconds=1):
+    response = generate_content_with_retry(
+        client,
+        contents=build_extraction_prompt(text),
+        sleep_seconds=sleep_seconds,
+    )
 
     raw_output = response.text or ""
 
@@ -159,7 +200,7 @@ def normalize_ask_answer(answer):
     return normalized
 
 
-def ask_decision_vault_with_client(client, question, decision_records, context=None):
+def ask_decision_vault_with_client(client, question, decision_records, context=None, sleep_seconds=1):
     prompt = f"""
 You are DecisionVault AI.
 
@@ -216,16 +257,11 @@ User Question:
 Give a clear, concise answer.
 """
 
-    try:
-        response = client.models.generate_content(
-            model=EXTRACTION_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-    except Exception as exc:
-        raise GeminiAPIError(f"Gemini request failed: {exc}", exc) from exc
+    response = generate_content_with_retry(
+        client,
+        contents=prompt,
+        sleep_seconds=sleep_seconds,
+    )
 
     raw_output = response.text or ""
 

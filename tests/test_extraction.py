@@ -1,6 +1,6 @@
 import unittest
 
-from decisionvault.extraction import ask_decision_vault_with_client
+from decisionvault.extraction import ask_decision_vault_with_client, extract_decisions_with_client
 from decisionvault.gemini_helpers import GeminiAPIError
 
 
@@ -30,6 +30,37 @@ class FailingModels:
 class FailingClient:
     def __init__(self):
         self.models = FailingModels()
+
+
+class TemporarilyUnavailableModels:
+    def __init__(self, failures_before_success=1):
+        self.failures_before_success = failures_before_success
+        self.call_count = 0
+
+    def generate_content(self, **kwargs):
+        self.call_count += 1
+
+        if self.call_count <= self.failures_before_success:
+            raise RuntimeError(
+                "503 UNAVAILABLE. {'error': {'code': 503, 'message': "
+                "'This model is currently experiencing high demand.', "
+                "'status': 'UNAVAILABLE'}}"
+            )
+
+        return FakeResponse(
+            """
+            {
+              "executive_summary": "Launch readiness was discussed.",
+              "decision_records": [],
+              "items_needing_human_review": []
+            }
+            """
+        )
+
+
+class TemporarilyUnavailableClient:
+    def __init__(self, failures_before_success=1):
+        self.models = TemporarilyUnavailableModels(failures_before_success)
 
 
 class CapturingModels:
@@ -84,6 +115,23 @@ class ExtractionTests(unittest.TestCase):
             ask_decision_vault_with_client(client, "Why?", [])
 
         self.assertIn("quota exceeded", str(context.exception))
+
+    def test_extract_retries_temporary_gemini_503_errors(self):
+        client = TemporarilyUnavailableClient(failures_before_success=1)
+
+        result = extract_decisions_with_client(client, "Meeting notes", sleep_seconds=0)
+
+        self.assertEqual(client.models.call_count, 2)
+        self.assertEqual(result["executive_summary"], "Launch readiness was discussed.")
+
+    def test_extract_raises_friendly_message_after_repeated_503_errors(self):
+        client = TemporarilyUnavailableClient(failures_before_success=3)
+
+        with self.assertRaises(GeminiAPIError) as context:
+            extract_decisions_with_client(client, "Meeting notes", sleep_seconds=0)
+
+        self.assertIn("Gemini is temporarily overloaded", str(context.exception))
+        self.assertNotIn("{'error'", str(context.exception))
 
     def test_ask_prompt_includes_meeting_context_when_available(self):
         client = CapturingClient(

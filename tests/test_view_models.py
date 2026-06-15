@@ -2,7 +2,10 @@ import unittest
 
 from decisionvault.view_models import (
     enrich_records_for_ui,
+    filter_records_for_vault,
     format_bytes,
+    format_missing_field_warning,
+    generate_example_questions,
     get_record_quality,
     summarize_records,
 )
@@ -42,6 +45,85 @@ class ViewModelTests(unittest.TestCase):
 
         self.assertEqual(records[0]["record_quality_level"], "Ready")
         self.assertEqual(records[0]["record_missing_fields"], [])
+
+    def test_enrich_records_adds_friendly_missing_field_warning(self):
+        records = enrich_records_for_ui([
+            {
+                "decision": "Migrate backend service to FastAPI",
+                "reason": "Improve backend performance",
+                "owner": "Meera",
+                "approver": "None",
+                "affected_project_or_workflow": "Backend migration",
+                "source_evidence": ["Team agreed to migrate backend service"]
+            }
+        ])
+
+        self.assertEqual(
+            records[0]["record_missing_field_warning"],
+            "Needs review: approver not found",
+        )
+
+    def test_format_missing_field_warning_uses_readable_labels(self):
+        self.assertEqual(
+            format_missing_field_warning(["source_evidence", "affected_project_or_workflow"]),
+            "Needs review: source evidence and workflow not found",
+        )
+
+    def test_enrich_records_adds_friendly_input_values_and_placeholders(self):
+        records = enrich_records_for_ui([
+            {
+                "decision": "Delay mobile launch",
+                "reason": "None",
+                "owner": "unknown",
+                "approver": "None",
+                "affected_project_or_workflow": "",
+                "source_evidence": []
+            }
+        ])
+
+        form_fields = records[0]["form_fields"]
+
+        self.assertEqual(form_fields["owner"]["value"], "")
+        self.assertEqual(form_fields["owner"]["placeholder"], "Owner not found")
+        self.assertEqual(form_fields["approver"]["value"], "")
+        self.assertEqual(form_fields["approver"]["placeholder"], "Approver not found")
+        self.assertEqual(form_fields["workflow"]["placeholder"], "Workflow not found")
+
+    def test_generate_example_questions_uses_current_records(self):
+        questions = generate_example_questions([
+            {
+                "decision": "Delay mobile launch",
+                "owner": "Priya",
+                "approver": "",
+                "affected_project_or_workflow": "Mobile App"
+            }
+        ])
+
+        self.assertIn("What were the main decisions?", questions)
+        self.assertIn("What follow-ups does Priya own?", questions)
+        self.assertIn("What approvals are missing?", questions)
+        self.assertIn("What decisions affect Mobile App?", questions)
+
+    def test_filter_records_for_vault_matches_query_and_status(self):
+        records = [
+            {
+                "decision": "Delay mobile launch",
+                "owner": "Priya",
+                "status": "Pending Approval",
+                "affected_project_or_workflow": "Mobile App",
+            },
+            {
+                "decision": "Migrate backend",
+                "owner": "Meera",
+                "status": "Completed",
+                "affected_project_or_workflow": "Backend",
+            },
+        ]
+
+        filtered = filter_records_for_vault(records, query="mobile", status="Pending Approval")
+
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["decision"], "Delay mobile launch")
 
     def test_summarize_records_counts_quality_levels(self):
         summary = summarize_records([

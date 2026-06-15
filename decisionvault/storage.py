@@ -91,3 +91,22 @@ def delete_decision_from_vault(decision_id, vault_file):
 
     save_vault(remaining_records, vault_file)
     return True
+
+
+def update_saved_decision(decision_id, updates, vault_file):
+    existing_records = load_vault(vault_file)
+
+    for index, record in enumerate(existing_records):
+        if record.get("decision_id") != decision_id:
+            continue
+
+        updated_record = record.copy()
+        updated_record.update(updates)
+        updated_record["decision_id"] = record.get("decision_id")
+        updated_record["saved_at"] = record.get("saved_at")
+        updated_record["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        existing_records[index] = add_bayesian_confidence_to_records([updated_record])[0]
+        save_vault(existing_records, vault_file)
+        return True
+
+    return False

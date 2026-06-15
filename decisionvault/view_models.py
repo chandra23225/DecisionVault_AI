@@ -11,6 +11,21 @@ REQUIRED_RECORD_FIELDS = [
     "source_evidence",
 ]
 
+FIELD_LABELS = {
+    "affected_project_or_workflow": "workflow",
+    "source_evidence": "source evidence",
+}
+
+FIELD_PLACEHOLDERS = {
+    "owner": "Owner not found",
+    "approver": "Approver not found",
+    "affected_project_or_workflow": "Workflow not found",
+    "reason": "Reason not found",
+    "decision_type": "Type not found",
+    "confidence": "Confidence not found",
+    "reusable_context": "Reusable context not found",
+}
+
 
 def format_bytes(size):
     size = int(size or 0)
@@ -69,6 +84,46 @@ def get_record_quality(record):
     }
 
 
+def get_friendly_form_field(record, field):
+    value = record.get(field)
+
+    return {
+        "value": value if has_meaningful_value(value) else "",
+        "placeholder": FIELD_PLACEHOLDERS.get(field, f"{field.replace('_', ' ').title()} not found"),
+    }
+
+
+def get_record_form_fields(record):
+    return {
+        "decision_type": get_friendly_form_field(record, "decision_type"),
+        "confidence": get_friendly_form_field(record, "confidence"),
+        "owner": get_friendly_form_field(record, "owner"),
+        "approver": get_friendly_form_field(record, "approver"),
+        "workflow": get_friendly_form_field(record, "affected_project_or_workflow"),
+        "reason": get_friendly_form_field(record, "reason"),
+        "reusable_context": get_friendly_form_field(record, "reusable_context"),
+    }
+
+
+def format_missing_field_warning(missing_fields):
+    missing_fields = missing_fields or []
+
+    if not missing_fields:
+        return ""
+
+    labels = [
+        FIELD_LABELS.get(field, field.replace("_", " "))
+        for field in missing_fields
+    ]
+
+    if len(labels) == 1:
+        field_text = labels[0]
+    else:
+        field_text = ", ".join(labels[:-1]) + f" and {labels[-1]}"
+
+    return f"Needs review: {field_text} not found"
+
+
 def enrich_records_for_ui(records):
     enriched_records = []
 
@@ -78,9 +133,85 @@ def enrich_records_for_ui(records):
         enriched_record["record_quality_score"] = quality["score"]
         enriched_record["record_quality_level"] = quality["level"]
         enriched_record["record_missing_fields"] = quality["missing_fields"]
+        enriched_record["record_missing_field_warning"] = format_missing_field_warning(
+            quality["missing_fields"]
+        )
+        enriched_record["form_fields"] = get_record_form_fields(enriched_record)
         enriched_records.append(enriched_record)
 
     return enriched_records
+
+
+def get_unique_meaningful_values(records, field, limit=3):
+    values = []
+    seen = set()
+
+    for record in records or []:
+        value = str(record.get(field) or "").strip()
+        key = value.lower()
+
+        if has_meaningful_value(value) and key not in seen:
+            values.append(value)
+            seen.add(key)
+
+        if len(values) >= limit:
+            break
+
+    return values
+
+
+def generate_example_questions(records):
+    records = records or []
+    questions = [
+        "What were the main decisions?",
+        "What is the topic of this meeting?",
+        "What are the risks or blockers?",
+        "What follow-up actions are needed?",
+    ]
+
+    owners = get_unique_meaningful_values(records, "owner", limit=1)
+    workflows = get_unique_meaningful_values(records, "affected_project_or_workflow", limit=1)
+
+    if owners:
+        questions.append(f"What follow-ups does {owners[0]} own?")
+
+    if any(not field_has_value(record, "approver") for record in records):
+        questions.append("What approvals are missing?")
+
+    if workflows:
+        questions.append(f"What decisions affect {workflows[0]}?")
+
+    return questions[:7]
+
+
+def filter_records_for_vault(records, query="", status=""):
+    query = str(query or "").strip().lower()
+    status = str(status or "").strip()
+    filtered_records = []
+
+    for record in records or []:
+        searchable_text = " ".join(
+            str(record.get(field, ""))
+            for field in [
+                "decision",
+                "owner",
+                "approver",
+                "affected_project_or_workflow",
+                "reason",
+                "status",
+                "decision_id",
+            ]
+        ).lower()
+
+        if query and query not in searchable_text:
+            continue
+
+        if status and record.get("status") != status:
+            continue
+
+        filtered_records.append(record)
+
+    return filtered_records
 
 
 def summarize_records(records):

@@ -19,9 +19,15 @@ from decisionvault.storage import (
     load_vault,
     save_decisions_to_vault,
     save_vault,
+    update_saved_decision,
 )
 from decisionvault.validation import validate_uploaded_file
-from decisionvault.view_models import enrich_records_for_ui, summarize_records
+from decisionvault.view_models import (
+    enrich_records_for_ui,
+    filter_records_for_vault,
+    generate_example_questions,
+    summarize_records,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -31,6 +37,7 @@ MAX_UPLOAD_FILE_SIZE_MB = get_int_config_value("MAX_UPLOAD_FILE_SIZE_MB", 2)
 MAX_UPLOAD_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_SIZE_MB = get_int_config_value("MAX_TOTAL_UPLOAD_SIZE_MB", 5)
 MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_TOTAL_UPLOAD_SIZE_MB * 1024 * 1024
+VAULT_STATUSES = ["Active", "Pending Approval", "Superseded", "Completed", "Archived"]
 
 app = Flask(
     __name__,
@@ -115,6 +122,13 @@ def update_current_records(records):
     current_state["result"] = result
 
 
+def get_ready_records(records):
+    return [
+        record for record in enrich_records_for_ui(records)
+        if record.get("record_quality_level") == "Ready"
+    ]
+
+
 def read_uploaded_files(files):
     validation_errors = []
     combined_text = ""
@@ -148,9 +162,10 @@ def read_uploaded_files(files):
     return combined_text, validation_errors
 
 
-def build_page_context(active_view="extract"):
+def build_page_context(active_view="extract", vault_query="", vault_status=""):
     records = get_current_records()
-    saved_records = enrich_records_for_ui(add_bayesian_confidence_to_records(load_vault(VAULT_FILE)))
+    all_saved_records = enrich_records_for_ui(add_bayesian_confidence_to_records(load_vault(VAULT_FILE)))
+    saved_records = filter_records_for_vault(all_saved_records, vault_query, vault_status)
     result = current_state.get("result") or {}
 
     return {
@@ -160,7 +175,11 @@ def build_page_context(active_view="extract"):
         "review_items": result.get("items_needing_human_review", []),
         "combined_text": current_state.get("combined_text", ""),
         "saved_records": saved_records,
-        "saved_summary": summarize_records(saved_records),
+        "saved_summary": summarize_records(all_saved_records),
+        "vault_query": vault_query,
+        "vault_status": vault_status,
+        "vault_statuses": VAULT_STATUSES,
+        "ask_example_questions": generate_example_questions(records),
         "answer": current_state.get("answer", ""),
         "last_question": current_state.get("last_question", ""),
         "message": current_state.get("message", ""),
@@ -189,7 +208,14 @@ def ask_page():
 
 @app.route("/vault", methods=["GET"])
 def vault_page():
-    return render_template("index.html", **build_page_context("vault"))
+    return render_template(
+        "index.html",
+        **build_page_context(
+            "vault",
+            vault_query=request.args.get("q", ""),
+            vault_status=request.args.get("status", ""),
+        ),
+    )
 
 
 @app.route("/extract", methods=["POST"])
@@ -216,12 +242,21 @@ def extract():
         )
         current_state["result"] = result
         current_state["combined_text"] = combined_text
+
+        if not result.get("decision_records"):
+            current_state["message"] = ""
+            current_state["error"] = (
+                "No clear business decisions found. Try uploading meeting notes "
+                "with decisions, owners, approvals, next steps, or source evidence."
+            )
+            return redirect("/extract")
+
         current_state["message"] = "Decision memory generated."
 
         if validation_errors:
             current_state["error"] = "Some files were skipped: " + " ".join(validation_errors)
     except GeminiAPIError as e:
-        current_state["error"] = f"Gemini request failed: {e}"
+        current_state["error"] = str(e)
     except GeminiJSONError as e:
         current_state["error"] = f"Gemini returned invalid JSON: {e}"
     except Exception as e:
@@ -239,6 +274,25 @@ def save_current():
     update_current_records(records)
     saved_count, duplicate_count, _ = save_decisions_to_vault(records, VAULT_FILE)
     current_state["message"] = f"Saved {saved_count} record(s). Skipped {duplicate_count} duplicate(s)."
+    current_state["error"] = ""
+    return redirect(url_for("vault_page"))
+
+
+@app.route("/save-ready", methods=["POST"])
+def save_ready():
+    records = parse_records_from_form(request.form)
+    update_current_records(records)
+    ready_records = get_ready_records(records)
+
+    if not ready_records:
+        current_state["message"] = ""
+        current_state["error"] = "No ready records to save yet. Review missing fields first."
+        return redirect(url_for("review_page"))
+
+    saved_count, duplicate_count, _ = save_decisions_to_vault(ready_records, VAULT_FILE)
+    current_state["message"] = (
+        f"Saved {saved_count} ready record(s). Skipped {duplicate_count} duplicate(s)."
+    )
     current_state["error"] = ""
     return redirect(url_for("vault_page"))
 
@@ -277,7 +331,7 @@ def ask_question():
         current_state["message"] = ""
         current_state["error"] = ""
     except GeminiAPIError as e:
-        current_state["error"] = f"Gemini request failed: {e}"
+        current_state["error"] = str(e)
     except Exception as e:
         current_state["error"] = str(e)
 
@@ -288,6 +342,35 @@ def ask_question():
 def delete_saved(decision_id):
     deleted = delete_decision_from_vault(decision_id, VAULT_FILE)
     current_state["message"] = "Saved decision deleted." if deleted else "Saved decision was not found."
+    current_state["error"] = ""
+    return redirect(url_for("vault_page"))
+
+
+def parse_saved_record_from_form(form):
+    return {
+        "decision": form.get("decision", ""),
+        "decision_type": form.get("decision_type", ""),
+        "reason": form.get("reason", ""),
+        "owner": form.get("owner", ""),
+        "approver": form.get("approver", ""),
+        "affected_project_or_workflow": form.get("workflow", ""),
+        "dependencies_or_conditions": parse_list_field(form.get("dependencies", "")),
+        "follow_up_actions": parse_list_field(form.get("followups", "")),
+        "source_evidence": parse_list_field(form.get("evidence", "")),
+        "confidence": form.get("confidence", ""),
+        "reusable_context": form.get("reusable_context", ""),
+        "status": form.get("status", "Active"),
+    }
+
+
+@app.route("/update-saved/<decision_id>", methods=["POST"])
+def update_saved(decision_id):
+    updated = update_saved_decision(
+        decision_id,
+        parse_saved_record_from_form(request.form),
+        VAULT_FILE,
+    )
+    current_state["message"] = "Saved decision updated." if updated else "Saved decision was not found."
     current_state["error"] = ""
     return redirect(url_for("vault_page"))
 

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DecisionVault AI</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -71,6 +72,10 @@
             <strong>Select files</strong>
             <span>Upload workplace notes, chat threads, emails, markdown, or CSV exports.</span>
           </label>
+          <div class="upload-summary" data-upload-summary>
+            <strong>No files selected yet</strong>
+            <span>Choose files to preview names, sizes, and accepted formats before extraction.</span>
+          </div>
           <div class="helper-row">
             <span>Per file: {{ max_upload_mb }} MB</span>
             <span>Total: {{ max_total_upload_mb }} MB</span>
@@ -110,6 +115,7 @@
               </div>
               <div class="button-row">
                 <button class="secondary-button" formaction="{{ url_for('update_current') }}" type="submit">Update records</button>
+                <button class="secondary-button" formaction="{{ url_for('save_ready') }}" type="submit">Save ready only</button>
                 <button class="primary-button" formaction="{{ url_for('save_current') }}" type="submit">Save to vault</button>
               </div>
             </div>
@@ -117,6 +123,12 @@
             <div class="summary-box">
               <strong>Executive summary</strong>
               <p>{{ result.executive_summary or "No summary available." }}</p>
+            </div>
+
+            <div class="review-help">
+              <span><strong>Confidence</strong> is Gemini's original certainty label.</span>
+              <span><strong>Quality</strong> checks whether key review fields are complete.</span>
+              <span><strong>Needs review</strong> means a useful field was not found in the source text.</span>
             </div>
 
             <div class="records">
@@ -136,17 +148,17 @@
                   </div>
 
                   {% if record.record_missing_fields %}
-                    <div class="warning-strip">Missing: {{ record.record_missing_fields|join(", ") }}</div>
+                    <div class="warning-strip">{{ record.record_missing_field_warning }}</div>
                   {% endif %}
 
                   <div class="form-grid">
-                    <label>Type<input name="decision_type_{{ i }}" value="{{ record.decision_type }}"></label>
-                    <label>Confidence<input name="confidence_{{ i }}" value="{{ record.confidence }}"></label>
-                    <label>Owner<input name="owner_{{ i }}" value="{{ record.owner }}"></label>
-                    <label>Approver<input name="approver_{{ i }}" value="{{ record.approver }}"></label>
-                    <label class="wide">Workflow<input name="workflow_{{ i }}" value="{{ record.affected_project_or_workflow }}"></label>
-                    <label class="wide">Reason<textarea name="reason_{{ i }}">{{ record.reason }}</textarea></label>
-                    <label class="wide">Reusable context<textarea name="reusable_context_{{ i }}">{{ record.reusable_context }}</textarea></label>
+                    <label>Type<input name="decision_type_{{ i }}" value="{{ record.form_fields.decision_type.value }}" placeholder="{{ record.form_fields.decision_type.placeholder }}"></label>
+                    <label>Confidence<input name="confidence_{{ i }}" value="{{ record.form_fields.confidence.value }}" placeholder="{{ record.form_fields.confidence.placeholder }}"></label>
+                    <label>Owner<input name="owner_{{ i }}" value="{{ record.form_fields.owner.value }}" placeholder="{{ record.form_fields.owner.placeholder }}"></label>
+                    <label>Approver<input name="approver_{{ i }}" value="{{ record.form_fields.approver.value }}" placeholder="{{ record.form_fields.approver.placeholder }}"></label>
+                    <label class="wide">Workflow<input name="workflow_{{ i }}" value="{{ record.form_fields.workflow.value }}" placeholder="{{ record.form_fields.workflow.placeholder }}"></label>
+                    <label class="wide">Reason<textarea name="reason_{{ i }}" placeholder="{{ record.form_fields.reason.placeholder }}">{{ record.form_fields.reason.value }}</textarea></label>
+                    <label class="wide">Reusable context<textarea name="reusable_context_{{ i }}" placeholder="{{ record.form_fields.reusable_context.placeholder }}">{{ record.form_fields.reusable_context.value }}</textarea></label>
                     <label>Dependencies<textarea name="dependencies_{{ i }}">{{ record.dependencies_or_conditions|join("\n") }}</textarea></label>
                     <label>Follow-ups<textarea name="followups_{{ i }}">{{ record.follow_up_actions|join("\n") }}</textarea></label>
                     <label>Evidence<textarea name="evidence_{{ i }}">{{ record.source_evidence|join("\n") }}</textarea></label>
@@ -200,6 +212,13 @@
               <input name="question" placeholder="Example: Why was the launch delayed?">
               <button class="primary-button" type="submit">Ask</button>
             </div>
+            {% if ask_example_questions %}
+              <div class="prompt-row">
+                {% for question in ask_example_questions %}
+                  <button class="prompt-chip" type="button" data-question="{{ question }}">{{ question }}</button>
+                {% endfor %}
+              </div>
+            {% endif %}
           </form>
 
           {% if answer %}
@@ -219,7 +238,7 @@
               </div>
 
               <div class="answer-meta">
-                <span>Source: {{ answer.answer_source or "Not Available" }}</span>
+                <span class="answer-source {{ (answer.answer_source or 'not-available')|lower|replace(' ', '-') }}">Source: {{ answer.answer_source or "Not Available" }}</span>
                 <span>Confidence: {{ answer.confidence or "Medium" }}</span>
               </div>
 
@@ -313,14 +332,53 @@
           </div>
         </div>
 
+        <form class="vault-filter" method="get" action="{{ url_for('vault_page') }}">
+          <input name="q" value="{{ vault_query }}" placeholder="Search by decision, owner, workflow, status, or ID">
+          <select name="status">
+            <option value="">All statuses</option>
+            {% for status in vault_statuses %}
+              <option value="{{ status }}" {% if vault_status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+          <button class="secondary-button" type="submit">Filter</button>
+          {% if vault_query or vault_status %}
+            <a class="link-button" href="{{ url_for('vault_page') }}">Clear</a>
+          {% endif %}
+        </form>
+
         {% if saved_records %}
           <div class="vault-list">
             {% for record in saved_records %}
               <article class="vault-row">
-                <div>
-                  <strong>{{ record.decision_id or "No ID" }} · {{ record.decision }}</strong>
-                  <span>{{ record.affected_project_or_workflow or "No workflow" }} · {{ record.record_quality_level }} · {{ record.bayesian_confidence_score }}%</span>
-                </div>
+                <form class="vault-edit-form" method="post" action="{{ url_for('update_saved', decision_id=record.decision_id) }}">
+                  <div class="vault-row-header">
+                    <strong>{{ record.decision_id or "No ID" }}</strong>
+                    <span>{{ record.record_quality_level }} · {{ record.bayesian_confidence_score }}%</span>
+                  </div>
+                  <div class="form-grid compact">
+                    <label class="wide">Decision<input name="decision" value="{{ record.decision }}"></label>
+                    <label>Status
+                      <select name="status">
+                        {% for status in vault_statuses %}
+                          <option value="{{ status }}" {% if record.status == status %}selected{% endif %}>{{ status }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>Type<input name="decision_type" value="{{ record.form_fields.decision_type.value }}" placeholder="{{ record.form_fields.decision_type.placeholder }}"></label>
+                    <label>Owner<input name="owner" value="{{ record.form_fields.owner.value }}" placeholder="{{ record.form_fields.owner.placeholder }}"></label>
+                    <label>Approver<input name="approver" value="{{ record.form_fields.approver.value }}" placeholder="{{ record.form_fields.approver.placeholder }}"></label>
+                    <label class="wide">Workflow<input name="workflow" value="{{ record.form_fields.workflow.value }}" placeholder="{{ record.form_fields.workflow.placeholder }}"></label>
+                    <label class="wide">Reason<textarea name="reason" placeholder="{{ record.form_fields.reason.placeholder }}">{{ record.form_fields.reason.value }}</textarea></label>
+                    <label class="wide">Reusable context<textarea name="reusable_context" placeholder="{{ record.form_fields.reusable_context.placeholder }}">{{ record.form_fields.reusable_context.value }}</textarea></label>
+                    <label>Dependencies<textarea name="dependencies">{{ record.dependencies_or_conditions|join("\n") }}</textarea></label>
+                    <label>Follow-ups<textarea name="followups">{{ record.follow_up_actions|join("\n") }}</textarea></label>
+                    <label>Evidence<textarea name="evidence">{{ record.source_evidence|join("\n") }}</textarea></label>
+                    <input type="hidden" name="confidence" value="{{ record.confidence }}">
+                  </div>
+                  <div class="button-row">
+                    <button class="secondary-button" type="submit">Update saved record</button>
+                  </div>
+                </form>
                 <form method="post" action="{{ url_for('delete_saved', decision_id=record.decision_id) }}">
                   <button class="danger-button" type="submit">Delete</button>
                 </form>
@@ -330,6 +388,12 @@
           <form method="post" action="{{ url_for('clear_vault') }}">
             <button class="danger-button" type="submit">Clear vault</button>
           </form>
+        {% elif saved_summary.total %}
+          <div class="empty-state small">
+            <strong>No saved decisions match this filter</strong>
+            <span>Try a different search term or status.</span>
+            <a class="link-button" href="{{ url_for('vault_page') }}">Clear filters</a>
+          </div>
         {% else %}
           <div class="empty-state small">
             <strong>No saved decisions yet</strong>
