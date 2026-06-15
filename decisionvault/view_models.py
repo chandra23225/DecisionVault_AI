@@ -6,9 +6,19 @@ REQUIRED_RECORD_FIELDS = [
     "decision",
     "reason",
     "owner",
-    "approver",
     "affected_project_or_workflow",
     "source_evidence",
+]
+
+APPROVER_REQUIRED_TERMS = [
+    "approval",
+    "approved",
+    "approver",
+    "sign off",
+    "signed off",
+    "deployment condition",
+    "production deployment",
+    "compliance",
 ]
 
 FIELD_LABELS = {
@@ -58,11 +68,43 @@ def field_has_value(record, field):
     return has_meaningful_value(value)
 
 
+def is_approver_required(record):
+    decision_type = str(record.get("decision_type") or "").lower()
+    combined_text = " ".join(
+        str(record.get(field, ""))
+        for field in [
+            "decision",
+            "reason",
+            "reusable_context",
+            "affected_project_or_workflow",
+        ]
+    ).lower()
+    combined_text += " " + " ".join(str(item) for item in ensure_list(record.get("source_evidence")))
+
+    return (
+        "approval" in decision_type
+        or "deployment condition" in decision_type
+        or any(term in combined_text for term in APPROVER_REQUIRED_TERMS)
+    )
+
+
 def get_missing_record_fields(record):
-    return [
+    missing_fields = [
         field for field in REQUIRED_RECORD_FIELDS
         if not field_has_value(record, field)
     ]
+
+    if is_approver_required(record) and not field_has_value(record, "approver"):
+        missing_fields.append("approver")
+
+    return missing_fields
+
+
+def get_optional_missing_record_fields(record):
+    if is_approver_required(record) or field_has_value(record, "approver"):
+        return []
+
+    return ["approver"]
 
 
 def get_record_quality(record):
@@ -72,7 +114,7 @@ def get_record_quality(record):
 
     if score >= 85:
         level = "Ready"
-    elif score >= 65:
+    elif score >= 60:
         level = "Review"
     else:
         level = "Incomplete"
@@ -81,6 +123,7 @@ def get_record_quality(record):
         "score": score,
         "level": level,
         "missing_fields": missing_fields,
+        "optional_missing_fields": get_optional_missing_record_fields(record),
     }
 
 
@@ -124,6 +167,25 @@ def format_missing_field_warning(missing_fields):
     return f"Needs review: {field_text} not found"
 
 
+def format_optional_missing_field_note(optional_missing_fields):
+    optional_missing_fields = optional_missing_fields or []
+
+    if not optional_missing_fields:
+        return ""
+
+    labels = [
+        FIELD_LABELS.get(field, field.replace("_", " "))
+        for field in optional_missing_fields
+    ]
+
+    if len(labels) == 1:
+        field_text = labels[0]
+    else:
+        field_text = ", ".join(labels[:-1]) + f" and {labels[-1]}"
+
+    return f"Optional: {field_text} not found"
+
+
 def enrich_records_for_ui(records):
     enriched_records = []
 
@@ -133,8 +195,10 @@ def enrich_records_for_ui(records):
         enriched_record["record_quality_score"] = quality["score"]
         enriched_record["record_quality_level"] = quality["level"]
         enriched_record["record_missing_fields"] = quality["missing_fields"]
-        enriched_record["record_missing_field_warning"] = format_missing_field_warning(
-            quality["missing_fields"]
+        enriched_record["record_optional_missing_fields"] = quality["optional_missing_fields"]
+        enriched_record["record_missing_field_warning"] = (
+            format_missing_field_warning(quality["missing_fields"])
+            or format_optional_missing_field_note(quality["optional_missing_fields"])
         )
         enriched_record["form_fields"] = get_record_form_fields(enriched_record)
         enriched_records.append(enriched_record)
@@ -175,7 +239,10 @@ def generate_example_questions(records):
     if owners:
         questions.append(f"What follow-ups does {owners[0]} own?")
 
-    if any(not field_has_value(record, "approver") for record in records):
+    if any(
+        is_approver_required(record) and not field_has_value(record, "approver")
+        for record in records
+    ):
         questions.append("What approvals are missing?")
 
     if workflows:

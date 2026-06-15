@@ -150,6 +150,8 @@
 
                   {% if record.record_missing_fields %}
                     <div class="warning-strip">{{ record.record_missing_field_warning }}</div>
+                  {% elif record.record_optional_missing_fields %}
+                    <div class="optional-strip">{{ record.record_missing_field_warning }}</div>
                   {% endif %}
 
                   <div class="form-grid">

@@ -60,8 +60,30 @@ class ViewModelTests(unittest.TestCase):
 
         self.assertEqual(
             records[0]["record_missing_field_warning"],
+            "Optional: approver not found",
+        )
+        self.assertEqual(records[0]["record_quality_level"], "Ready")
+        self.assertEqual(records[0]["record_optional_missing_fields"], ["approver"])
+
+    def test_approval_related_records_still_require_approver(self):
+        records = enrich_records_for_ui([
+            {
+                "decision": "Get approval before production deployment",
+                "decision_type": "Approval",
+                "reason": "Production deployment needs sign off",
+                "owner": "Dev",
+                "approver": "None",
+                "affected_project_or_workflow": "Release",
+                "source_evidence": ["Deployment is pending approval"]
+            }
+        ])
+
+        self.assertEqual(
+            records[0]["record_missing_field_warning"],
             "Needs review: approver not found",
         )
+        self.assertIn("approver", records[0]["record_missing_fields"])
+        self.assertEqual(records[0]["record_optional_missing_fields"], [])
 
     def test_format_missing_field_warning_uses_readable_labels(self):
         self.assertEqual(
@@ -95,14 +117,28 @@ class ViewModelTests(unittest.TestCase):
                 "decision": "Delay mobile launch",
                 "owner": "Priya",
                 "approver": "",
-                "affected_project_or_workflow": "Mobile App"
+                "affected_project_or_workflow": "Mobile App",
+                "decision_type": "Timeline Change",
             }
         ])
 
         self.assertIn("What were the main decisions?", questions)
         self.assertIn("What follow-ups does Priya own?", questions)
-        self.assertIn("What approvals are missing?", questions)
+        self.assertNotIn("What approvals are missing?", questions)
         self.assertIn("What decisions affect Mobile App?", questions)
+
+    def test_generate_example_questions_includes_approval_prompt_when_relevant(self):
+        questions = generate_example_questions([
+            {
+                "decision": "Get approval before deployment",
+                "decision_type": "Approval",
+                "owner": "Priya",
+                "approver": "",
+                "affected_project_or_workflow": "Mobile App"
+            }
+        ])
+
+        self.assertIn("What approvals are missing?", questions)
 
     def test_filter_records_for_vault_matches_query_and_status(self):
         records = [

@@ -123,6 +123,43 @@ class FlaskAppCoreTests(unittest.TestCase):
         self.assertEqual(response.location, "/vault")
         self.assertIn("No saved records to export", flask_app_core.current_state["error"])
 
+    def test_extract_page_renders_user_clarity_labels(self):
+        response = self.client.get("/extract")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Upload", html)
+        self.assertIn("Review", html)
+        self.assertIn("Ask", html)
+        self.assertIn("Save", html)
+        self.assertIn("Current workspace is temporary", html)
+        self.assertIn("Saved vault is long-term memory", html)
+
+    def test_review_page_renders_ai_confidence_and_completeness_labels(self):
+        flask_app_core.current_state["result"] = {
+            "executive_summary": "Launch readiness was discussed.",
+            "decision_records": [
+                {
+                    "decision": "Delay launch",
+                    "decision_type": "Timeline Change",
+                    "reason": "Approval pending",
+                    "owner": "Priya",
+                    "approver": "Rohan",
+                    "affected_project_or_workflow": "Mobile App",
+                    "source_evidence": ["Rohan approved delay"],
+                    "confidence": "High",
+                }
+            ],
+        }
+
+        response = self.client.get("/review")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("AI confidence", html)
+        self.assertIn("Completeness", html)
+        self.assertIn("View original uploaded text used by AI", html)
+
 
 if __name__ == "__main__":
     unittest.main()
