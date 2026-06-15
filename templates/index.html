@@ -96,7 +96,7 @@
             <div class="metric"><span>Needs cleanup</span><strong>{{ record_summary.review + record_summary.incomplete }}</strong></div>
             <div class="metric"><span>Quality</span><strong>{{ record_summary.average_quality_score }}%</strong></div>
           </div>
-          <form method="post" action="{{ url_for('clear_current') }}">
+          <form method="post" action="{{ url_for('clear_current') }}" data-confirm="Clear the current workspace? Unsaved extracted records will be removed.">
             <button class="secondary-button" type="submit">Clear current workspace</button>
           </form>
         </section>
@@ -116,7 +116,7 @@
               <div class="button-row">
                 <button class="secondary-button" formaction="{{ url_for('update_current') }}" type="submit">Update records</button>
                 <button class="secondary-button" formaction="{{ url_for('save_ready') }}" type="submit">Save ready only</button>
-                <button class="primary-button" formaction="{{ url_for('save_current') }}" type="submit">Save to vault</button>
+                <button class="primary-button" formaction="{{ url_for('save_current') }}" type="submit">Save all records</button>
               </div>
             </div>
 
@@ -129,6 +129,7 @@
               <span><strong>Confidence</strong> is Gemini's original certainty label.</span>
               <span><strong>Quality</strong> checks whether key review fields are complete.</span>
               <span><strong>Needs review</strong> means a useful field was not found in the source text.</span>
+              <span><strong>Save ready only</strong> saves complete records. <strong>Save all records</strong> also saves records that still need cleanup.</span>
             </div>
 
             <div class="records">
@@ -192,7 +193,7 @@
         </div>
 
         {% if result %}
-          <form method="post" action="{{ url_for('ask_question') }}">
+          <form method="post" action="{{ url_for('ask_question') }}" data-ask-form>
             <input type="hidden" name="record_count" value="{{ records|length }}">
             {% for record in records %}
               {% set i = loop.index0 %}
@@ -215,7 +216,7 @@
             {% if ask_example_questions %}
               <div class="prompt-row">
                 {% for question in ask_example_questions %}
-                  <button class="prompt-chip" type="button" data-question="{{ question }}">{{ question }}</button>
+                  <button class="prompt-chip" type="button" data-question="{{ question }}" data-submit-question="true">{{ question }}</button>
                 {% endfor %}
               </div>
             {% endif %}
@@ -352,9 +353,13 @@
               <article class="vault-row">
                 <form class="vault-edit-form" method="post" action="{{ url_for('update_saved', decision_id=record.decision_id) }}">
                   <div class="vault-row-header">
-                    <strong>{{ record.decision_id or "No ID" }}</strong>
-                    <span>{{ record.record_quality_level }} · {{ record.bayesian_confidence_score }}%</span>
+                    <div>
+                      <strong>{{ record.decision_id or "No ID" }} · {{ record.decision }}</strong>
+                      <span>{{ record.status or "Active" }} · {{ record.affected_project_or_workflow or "Workflow not found" }} · {{ record.record_quality_level }} · {{ record.bayesian_confidence_score }}%</span>
+                    </div>
+                    <button class="secondary-button compact-button" type="button" data-toggle-edit>Edit</button>
                   </div>
+                  <div class="vault-edit-panel" hidden>
                   <div class="form-grid compact">
                     <label class="wide">Decision<input name="decision" value="{{ record.decision }}"></label>
                     <label>Status
@@ -378,14 +383,15 @@
                   <div class="button-row">
                     <button class="secondary-button" type="submit">Update saved record</button>
                   </div>
+                  </div>
                 </form>
-                <form method="post" action="{{ url_for('delete_saved', decision_id=record.decision_id) }}">
+                <form method="post" action="{{ url_for('delete_saved', decision_id=record.decision_id) }}" data-confirm="Delete this saved decision? This cannot be undone.">
                   <button class="danger-button" type="submit">Delete</button>
                 </form>
               </article>
             {% endfor %}
           </div>
-          <form method="post" action="{{ url_for('clear_vault') }}">
+          <form method="post" action="{{ url_for('clear_vault') }}" data-confirm="Clear the entire saved vault? This cannot be undone.">
             <button class="danger-button" type="submit">Clear vault</button>
           </form>
         {% elif saved_summary.total %}

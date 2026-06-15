@@ -132,7 +132,7 @@ textarea {
   max-width: 860px;
   font-size: clamp(34px, 4vw, 58px);
   line-height: 1.02;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .hero p {
@@ -653,7 +653,7 @@ textarea {
 
 .review-help {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
   margin-bottom: 22px;
 }
@@ -685,7 +685,7 @@ textarea {
 }
 
 .prompt-chip:hover {
-  border-color: var(--accent);
+  border-color: var(--teal);
   background: #ecfdf5;
 }
 
@@ -726,12 +726,26 @@ textarea {
   margin-bottom: 12px;
 }
 
+.vault-row-header strong {
+  display: block;
+  line-height: 1.35;
+}
+
 .vault-row-header span {
   color: var(--muted);
 }
 
 .vault-edit-form {
   margin-bottom: 12px;
+}
+
+.vault-edit-panel[hidden] {
+  display: none;
+}
+
+.compact-button {
+  flex: 0 0 auto;
+  padding: 8px 11px;
 }
 
 .form-grid.compact {

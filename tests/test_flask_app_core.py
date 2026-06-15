@@ -105,6 +105,24 @@ class FlaskAppCoreTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(flask_app_core.current_state["error"], friendly_message)
 
+    def test_export_empty_current_records_redirects_with_message(self):
+        response = self.client.get("/export/current/csv")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/extract")
+        self.assertIn("No current records to export", flask_app_core.current_state["error"])
+
+    def test_export_empty_saved_records_redirects_with_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            vault_file = str(Path(temp_dir) / "vault.json")
+
+            with patch.object(flask_app_core, "VAULT_FILE", vault_file):
+                response = self.client.get("/export/saved/csv")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/vault")
+        self.assertIn("No saved records to export", flask_app_core.current_state["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

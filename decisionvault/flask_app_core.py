@@ -413,6 +413,16 @@ def records_to_excel_bytes(records):
 def export_records(scope, file_type):
     records = get_current_records() if scope == "current" else load_vault(VAULT_FILE)
 
+    if not records:
+        if scope == "current":
+            current_state["message"] = ""
+            current_state["error"] = "No current records to export. Generate decision memory first."
+            return redirect("/extract")
+
+        current_state["message"] = ""
+        current_state["error"] = "No saved records to export. Save reviewed records to the vault first."
+        return redirect("/vault")
+
     if file_type == "csv":
         return send_file(
             records_to_csv_bytes(records),

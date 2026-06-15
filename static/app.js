@@ -38,6 +38,91 @@ function renderUploadSummary(input) {
   summary.innerHTML = `<strong>${files.length} file(s) selected · ${formatBytes(totalSize)} total</strong><ul>${items}</ul>`;
 }
 
+function selectedFilesIncludeUnsupported(form) {
+  const fileInput = form.querySelector("input[type='file'][name='source_files']");
+
+  if (!fileInput) {
+    return false;
+  }
+
+  const allowedExtensions = [".txt", ".md", ".csv"];
+
+  return Array.from(fileInput.files || []).some((file) => {
+    const lowerName = file.name.toLowerCase();
+    return !allowedExtensions.some((extension) => lowerName.endsWith(extension));
+  });
+}
+
+function wireFormGuardrails() {
+  document.querySelectorAll("form").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const confirmationMessage = form.dataset.confirm;
+
+      if (confirmationMessage && !window.confirm(confirmationMessage)) {
+        event.preventDefault();
+        return;
+      }
+
+      if (selectedFilesIncludeUnsupported(form)) {
+        const proceed = window.confirm("Some selected files are unsupported and will be skipped. Continue with the supported files?");
+
+        if (!proceed) {
+          event.preventDefault();
+          return;
+        }
+      }
+
+      const submitter = event.submitter || form.querySelector("button[type='submit']");
+
+      if (submitter) {
+        submitter.disabled = true;
+        submitter.dataset.originalText = submitter.textContent;
+        submitter.textContent = "Working...";
+      }
+    });
+  });
+}
+
+function wirePromptChips() {
+  document.querySelectorAll("[data-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const questionInput = document.querySelector("input[name='question']");
+
+      if (!questionInput) {
+        return;
+      }
+
+      questionInput.value = button.dataset.question || "";
+      questionInput.focus();
+
+      if (button.dataset.submitQuestion === "true") {
+        const askForm = button.closest("form") || document.querySelector("[data-ask-form]");
+
+        if (askForm) {
+          askForm.requestSubmit();
+        }
+      }
+    });
+  });
+}
+
+function wireVaultEditToggles() {
+  document.querySelectorAll("[data-toggle-edit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const row = button.closest(".vault-row");
+      const editPanel = row ? row.querySelector(".vault-edit-panel") : null;
+
+      if (!editPanel) {
+        return;
+      }
+
+      const isOpening = editPanel.hasAttribute("hidden");
+      editPanel.toggleAttribute("hidden");
+      button.textContent = isOpening ? "Close" : "Edit";
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const fileInput = document.querySelector("input[type='file'][name='source_files']");
 
@@ -45,14 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fileInput.addEventListener("change", () => renderUploadSummary(fileInput));
   }
 
-  document.querySelectorAll("[data-question]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const questionInput = document.querySelector("input[name='question']");
-
-      if (questionInput) {
-        questionInput.value = button.dataset.question || "";
-        questionInput.focus();
-      }
-    });
-  });
+  wireFormGuardrails();
+  wirePromptChips();
+  wireVaultEditToggles();
 });
