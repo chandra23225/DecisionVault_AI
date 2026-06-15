@@ -1,156 +1,93 @@
 # DecisionVault AI
 
-DecisionVault AI is a GenAI-powered decision memory workspace that turns messy workplace communication into structured, reusable decision records.
+DecisionVault AI is a GenAI-powered decision memory workspace for turning messy workplace communication into structured, reviewable decision records.
 
-It is built for teams and AI agents that need more than meeting summaries. DecisionVault AI extracts what was decided, why it was decided, who owns the next step, who approved it, what workflow it affects, and what evidence supports it.
+It helps teams capture what was decided, why it was decided, who owns the next step, who approved it, which workflow is affected, and what evidence supports the decision.
 
 ![DecisionVault AI extract workspace](assets/decisionvault-flask-extract.jpg)
 
-## Product Focus
+## What’s new in the current build
+
+The project has evolved from a simple prototype into a more complete decision-intelligence workflow with:
+
+- a custom Flask + HTML/CSS experience instead of a Streamlit-only interface
+- a dedicated review workflow so extracted records can be edited before saving
+- a structured Ask experience that answers questions using the current or saved decision memory
+- stronger upload validation for file type, size, encoding, and CSV usability
+- local JSON vault storage with duplicate prevention and export options
+- a desktop wrapper for Windows users via pywebview and launch scripts
+
+## Product focus
 
 ```text
 messy workplace communication -> reviewed decision records -> searchable decision vault
 ```
 
-DecisionVault AI focuses on durable business context. It helps convert scattered meetings, Slack-style threads, email discussions, incident notes, project updates, and CSV/text exports into decision memory that can be reviewed, saved, searched, and reused.
+DecisionVault AI is designed to preserve durable business context from meetings, Slack-style threads, emails, incident notes, project updates, and CSV/text exports.
 
-## Current App Experience
+## Main experience
 
-The primary app is now a custom Flask + HTML/CSS interface rather than a Streamlit-only UI. This gives the project more control over layout, navigation, review workflows, and desktop packaging.
+The app now offers four primary views:
 
-Current views:
-
-- **Extract**: upload source files and generate structured decision memory
-- **Review**: edit extracted records before saving them
-- **Ask**: ask professional, structured questions over the current decision memory
-- **Vault**: manage saved decision records in local storage
+- Extract: upload source files and generate structured decision memory
+- Review: inspect and edit the extracted records before saving
+- Ask: ask professional, structured questions over the current decision context
+- Vault: manage saved decision records locally
 
 ## Workflow
 
-```mermaid
-flowchart TD
-    A[User opens DecisionVault AI] --> B[Extract page]
-    B --> C[Upload source files<br/>TXT, Markdown, CSV]
-    C --> D{Upload validation}
+1. Upload evidence from .txt, .md, or .csv files.
+2. Validate the uploads before sending anything to Gemini.
+3. Extract structured decision records with rationale, owner, approver, workflow, dependencies, evidence, and confidence.
+4. Enrich the records with quality signals, missing-field warnings, and Bayesian confidence scoring.
+5. Review and edit the results before saving them.
+6. Save reviewed records to a local decision vault with duplicate checks.
+7. Ask questions over the current or saved memory and receive structured answers with supporting records, gaps, and next steps.
+8. Export current records or vault contents as CSV or Excel when needed.
 
-    D -->|Valid files| E[Combine source text<br/>with source-file markers]
-    D -->|Rejected files| D1[Show validation errors<br/>unsupported type, too large, empty,<br/>binary-looking, invalid UTF-8, bad CSV]
-    D1 --> C
+## What the app does well
 
-    E --> F[Gemini 2.5 Flash extraction]
-    F --> G[Structured decision memory JSON]
-
-    G --> H[Backend enrichment]
-    H --> H1[Bayesian confidence scoring]
-    H --> H2[Record quality scoring]
-    H --> H3[Missing-field detection]
-
-    H1 --> I[Review page]
-    H2 --> I
-    H3 --> I
-
-    I --> J[User reviews and edits records]
-    J --> K{Save reviewed records?}
-
-    K -->|Yes| L[Duplicate check<br/>decision + workflow]
-    K -->|No| M[Export current records<br/>CSV or Excel]
-
-    L -->|New record| N[Assign decision ID<br/>and saved timestamp]
-    L -->|Duplicate| O[Skip duplicate<br/>and report count]
-    N --> P[Local JSON decision vault]
-    O --> P
-
-    P --> Q[Vault page]
-    Q --> R[Inspect saved decisions]
-    Q --> S[Delete outdated records]
-    Q --> T[Export saved vault<br/>CSV or Excel]
-
-    J --> U[Ask page]
-    P --> U
-    U --> V[User asks a question]
-    V --> W[Gemini answers using only<br/>provided decision records]
-    W --> X[Structured answer result]
-    X --> X1[Direct answer]
-    X --> X2[Key points]
-    X --> X3[Supporting records]
-    X --> X4[Information gaps]
-    X --> X5[Recommended next steps]
-```
-
-### Workflow Summary
-
-1. **Upload evidence**: users add `.txt`, `.md`, or `.csv` files from meetings, threads, emails, notes, or exports.
-2. **Validate inputs**: the backend blocks unsupported, oversized, empty, binary-looking, invalid UTF-8, or unusable CSV files before anything is sent to Gemini.
-3. **Extract decisions**: Gemini turns the combined source text into structured decision records with rationale, owner, approver, workflow, dependencies, evidence, confidence, and reusable context.
-4. **Enrich records**: backend helpers add Bayesian confidence, record quality scores, and missing-field warnings.
-5. **Review before saving**: users edit records first, so AI output does not automatically become saved memory.
-6. **Save to vault**: reviewed records are deduplicated, assigned decision IDs, timestamped, and stored in a local JSON vault.
-7. **Ask and reuse**: users can ask questions over the current decision memory and receive structured answers with supporting records, gaps, and next steps.
-8. **Export when needed**: current records and saved vault records can be exported as CSV or Excel.
-
-## Screenshots
-
-### Extract Workspace
-
-![DecisionVault AI extract workspace](assets/decisionvault-flask-extract.jpg)
-
-### Review Records
-
-![DecisionVault AI review workspace](assets/decisionvault-flask-review.jpg)
-
-### Ask Decision Memory
-
-![DecisionVault AI ask workspace](assets/decisionvault-flask-ask.jpg)
-
-### Saved Vault
-
-![DecisionVault AI saved vault](assets/decisionvault-flask-vault.jpg)
-
-## What It Does
-
-- Extracts structured business decisions from meeting notes, Slack-style threads, emails, project notes, and CSV/text exports
-- Captures decision rationale, owner, approver, affected workflow, dependencies, source evidence, confidence, and reusable context
-- Scores each record for completeness using review-ready quality signals
-- Lets users review and edit extracted decision records before saving them
+- Extracts structured business decisions from meeting notes, threads, emails, and project communications
+- Captures rationale, ownership, approvals, affected workflow, dependencies, evidence, and reusable context
+- Scores records for completeness and review readiness
+- Lets users review and edit AI output before it becomes permanent memory
 - Saves reviewed records into a local decision vault
 - Provides structured Ask results with direct answers, key points, supporting records, information gaps, and next steps
 - Prevents simple duplicate saves
-- Exports current and saved records as CSV or Excel
-- Flags ambiguous or incomplete records for human review
+- Exports data for sharing or downstream analysis
 
-## Structured Ask Results
+## Screenshots
 
-The Ask page is designed to feel more like a decision-intelligence result than a chatbot response. Answers include:
+### Extract workspace
 
-- answer status: answered, partially answered, or not available
-- direct executive-style answer
-- key points
-- supporting decision records
-- information gaps
-- recommended next steps
+![DecisionVault AI extract workspace](assets/decisionvault-flask-extract.jpg)
 
-This keeps answers grounded in saved or current decision records and makes missing context explicit.
+### Review workspace
 
-## Saved Decision Vault
+![DecisionVault AI review workspace](assets/decisionvault-flask-review.jpg)
 
-The saved vault turns one-off extraction into reusable organizational memory. Users can save reviewed records, inspect saved decisions, delete outdated records, and export the vault.
+### Ask workspace
+
+![DecisionVault AI ask workspace](assets/decisionvault-flask-ask.jpg)
+
+### Vault workspace
 
 ![DecisionVault AI saved vault](assets/decisionvault-flask-vault.jpg)
 
-## Tech Stack
+## Tech stack
 
 - Python
 - Flask
 - Custom HTML/CSS frontend
-- Gemini 2.5 Flash through `google-genai`
-- `pywebview` desktop wrapper
-- `python-dotenv`
+- Gemini 2.5 Flash via google-genai
+- pywebview for desktop wrapping
+- python-dotenv
 - pandas
 - openpyxl
 - Local JSON storage
-- Streamlit legacy UI kept in `app.py`
+- Streamlit legacy UI retained in app.py for compatibility
 
-## Setup
+## Quick start
 
 Create and activate a virtual environment:
 
@@ -165,21 +102,23 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Create a `.env` file in the project folder:
+Create a .env file in the project folder:
 
 ```text
 GEMINI_API_KEY=your_api_key_here
 ```
 
-The local vault file can be changed with:
+Optional configuration values:
 
 ```text
-DECISION_VAULT_FILE=data/decision_vault.json
+DECISION_VAULT_FILE=decision_vault.json
+MAX_UPLOAD_FILE_SIZE_MB=2
+MAX_TOTAL_UPLOAD_SIZE_MB=5
 ```
 
-## Run The Custom App
+## Run the web app
 
-Run the non-Streamlit app:
+Start the custom Flask app:
 
 ```powershell
 python flask_app.py
@@ -191,21 +130,21 @@ Then open:
 http://127.0.0.1:5050
 ```
 
-## Run As Desktop App
+## Run the desktop app
 
-Run the custom app in a desktop window:
+Start the desktop experience:
 
 ```powershell
 python desktop_flask_app.py
 ```
 
-On Windows, you can also double-click:
+On Windows, you can also launch it with:
 
 ```text
 launch_decisionvault_custom.bat
 ```
 
-## Optional Streamlit Legacy App
+## Optional legacy Streamlit app
 
 The earlier Streamlit version is still available:
 
@@ -219,35 +158,33 @@ Desktop wrapper for the Streamlit version:
 python desktop_app.py
 ```
 
-## Example Files
+## Example files
 
 For a quick example workflow, upload these files together:
 
-- `meeting_notes.txt`
-- `slack_thread.txt`
-- `email_thread.txt`
+- meeting_notes.txt
+- slack_thread.txt
+- email_thread.txt
 
-For a more realistic workplace-style example, upload files from `sample_data/`:
+For a more realistic workplace-style example, use files from sample_data/:
 
-- `sample_data/real_meeting_notes_anonymized.txt`
-- `sample_data/real_slack_thread_anonymized.txt`
-- `sample_data/real_email_thread_anonymized.txt`
-- `sample_data/incident_decisions_anonymized.csv`
+- sample_data/real_meeting_notes_anonymized.txt
+- sample_data/real_slack_thread_anonymized.txt
+- sample_data/real_email_thread_anonymized.txt
+- sample_data/incident_decisions_anonymized.csv
 
-These files are anonymized examples that mimic decision-heavy workplace communication.
-
-## Upload Safety
+## Upload safety
 
 DecisionVault AI validates uploads before sending text to Gemini:
 
-- accepts only `.txt`, `.md`, and `.csv`
+- accepts only .txt, .md, and .csv files
 - enforces per-file and combined upload size limits
 - rejects empty files
 - rejects binary-looking files
 - requires UTF-8 readable text
-- validates that `.csv` files contain usable CSV rows
+- validates that CSV files contain usable rows
 
-This version does not include antivirus or malware scanning. A public or enterprise deployment should add an antivirus service such as ClamAV or a cloud file scanning service before processing uploaded files.
+This version does not include antivirus or malware scanning. A public or enterprise deployment should add a file-scanning service such as ClamAV or a cloud-based security layer before processing uploads.
 
 ## Local Storage
 
