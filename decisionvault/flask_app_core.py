@@ -25,13 +25,18 @@ from decisionvault.view_models import enrich_records_for_ui, summarize_records
 
 
 APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parent
 VAULT_FILE = get_config_value("DECISION_VAULT_FILE", str(APP_DIR / "decision_vault.json"))
 MAX_UPLOAD_FILE_SIZE_MB = get_int_config_value("MAX_UPLOAD_FILE_SIZE_MB", 2)
 MAX_UPLOAD_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_SIZE_MB = get_int_config_value("MAX_TOTAL_UPLOAD_SIZE_MB", 5)
 MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_TOTAL_UPLOAD_SIZE_MB * 1024 * 1024
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(PROJECT_ROOT / "templates"),
+    static_folder=str(PROJECT_ROOT / "static"),
+)
 app.secret_key = get_config_value("FLASK_SECRET_KEY", "decisionvault-local-dev")
 
 current_state = {
