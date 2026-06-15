@@ -59,10 +59,11 @@ flowchart TD
     H3 --> I
 
     I --> J[User reviews and edits records]
-    J --> K{Save reviewed records?}
+    J --> K{Save records?}
 
-    K -->|Yes| L[Duplicate check<br/>decision + workflow]
-    K -->|No| M[Export current records<br/>CSV or Excel]
+    K -->|Save ready only| L[Duplicate check<br/>decision + workflow]
+    K -->|Save all records| L
+    K -->|Not yet| M[Export current records<br/>CSV or Excel]
 
     L -->|New record| N[Assign decision ID<br/>and saved timestamp]
     L -->|Duplicate| O[Skip duplicate<br/>and report count]
@@ -70,14 +71,14 @@ flowchart TD
     O --> P
 
     P --> Q[Vault page]
-    Q --> R[Inspect saved decisions]
-    Q --> S[Delete outdated records]
+    Q --> R[Search, filter, inspect,<br/>and edit saved decisions]
+    Q --> S[Update status or delete<br/>outdated records]
     Q --> T[Export saved vault<br/>CSV or Excel]
 
     J --> U[Ask page]
     P --> U
     U --> V[User asks a question]
-    V --> W[Gemini answers using only<br/>provided decision records]
+    V --> W[Gemini answers using reviewed records first<br/>and raw source text as backup]
     W --> X[Structured answer result]
     X --> X1[Direct answer]
     X --> X2[Key points]
@@ -93,8 +94,8 @@ flowchart TD
 3. Extract structured decision records with rationale, owner, approver, workflow, dependencies, evidence, and confidence.
 4. Enrich the records with quality signals, missing-field warnings, and Bayesian confidence scoring.
 5. Review and edit the results before saving them.
-6. Save reviewed records to a local decision vault with duplicate checks.
-7. Ask questions over the current or saved memory and receive structured answers with supporting records, gaps, and next steps.
+6. Save ready records or all reviewed records to a local decision vault with duplicate checks.
+7. Ask questions over the reviewed records and uploaded source context, with structured answers that include supporting records, source references, gaps, and next steps.
 8. Export current records or vault contents as CSV or Excel when needed.
 
 ## What the app does well
