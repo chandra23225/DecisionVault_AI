@@ -274,6 +274,31 @@ assets/                           README screenshots
 python -m unittest discover -s tests
 ```
 
+## How to use the app
+
+1. Start the app with the Flask web interface.
+2. Upload one or more .txt, .md, or .csv files.
+3. Review the extracted decision records and save the ones you want to keep.
+4. Use the Ask view to query the current or saved decision memory.
+
+## Development notes
+
+The core workflow is split across a few main modules:
+
+- [decisionvault/flask_app_core.py](decisionvault/flask_app_core.py) for routes and app state
+- [decisionvault/extraction.py](decisionvault/extraction.py) for Gemini extraction logic
+- [decisionvault/storage.py](decisionvault/storage.py) for vault persistence
+- [decisionvault/validation.py](decisionvault/validation.py) for upload validation
+- [decisionvault/view_models.py](decisionvault/view_models.py) for UI-friendly record enrichment
+
+## Contribution guide
+
+If you want to improve the project, a good starting point is:
+
+- add or update tests in [tests/](tests/)
+- keep the Flask workflow behavior consistent
+- validate new changes against the extraction, storage, and review flow
+
 ## Current Scope
 
 Current capabilities:
@@ -295,6 +320,16 @@ Not production-ready yet:
 - no enterprise access controls
 - no live Slack, Jira, Gmail, or document integrations
 - no formal compliance or data retention controls
+
+## Next ideas / roadmap
+
+Possible next improvements:
+
+- move from local JSON storage to SQLite or Postgres
+- add authentication and per-user workspaces
+- support richer exports and reporting
+- connect to Slack, Jira, Gmail, or other workplace tools
+- add stronger privacy and retention controls for enterprise use
 
 ## Privacy Note
 

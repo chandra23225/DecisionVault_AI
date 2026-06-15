@@ -80,6 +80,10 @@
             <span>Per file: {{ max_upload_mb }} MB</span>
             <span>Total: {{ max_total_upload_mb }} MB</span>
           </div>
+          <div class="helper-row">
+            <span>Current workspace is temporary</span>
+            <span>Saved vault is long-term memory</span>
+          </div>
           <button class="primary-button" type="submit">Generate Decision Memory</button>
         </form>
 
@@ -126,9 +130,10 @@
             </div>
 
             <div class="review-help">
-              <span><strong>Confidence</strong> is Gemini's original certainty label.</span>
-              <span><strong>Quality</strong> checks whether key review fields are complete.</span>
+              <span><strong>AI confidence</strong> is Gemini's original certainty label.</span>
+              <span><strong>Completeness</strong> checks whether key review fields are complete.</span>
               <span><strong>Needs review</strong> means a useful field was not found in the source text.</span>
+              <span><strong>View original uploaded text used by AI</strong> for traceability and evidence review.</span>
               <span><strong>Save ready only</strong> saves complete records. <strong>Save all records</strong> also saves records that still need cleanup.</span>
             </div>
 
