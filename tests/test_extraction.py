@@ -32,6 +32,21 @@ class FailingClient:
         self.models = FailingModels()
 
 
+class CapturingModels:
+    def __init__(self, text):
+        self.text = text
+        self.last_kwargs = None
+
+    def generate_content(self, **kwargs):
+        self.last_kwargs = kwargs
+        return FakeResponse(self.text)
+
+
+class CapturingClient:
+    def __init__(self, text):
+        self.models = CapturingModels(text)
+
+
 class ExtractionTests(unittest.TestCase):
     def test_ask_parses_structured_json_answer(self):
         client = FakeClient(
@@ -69,6 +84,84 @@ class ExtractionTests(unittest.TestCase):
             ask_decision_vault_with_client(client, "Why?", [])
 
         self.assertIn("quota exceeded", str(context.exception))
+
+    def test_ask_prompt_includes_meeting_context_when_available(self):
+        client = CapturingClient(
+            """
+            {
+              "answer_status": "Answered",
+              "direct_answer": "The meeting topic was launch readiness.",
+              "key_points": [],
+              "supporting_records": [],
+              "information_gaps": [],
+              "recommended_next_steps": []
+            }
+            """
+        )
+
+        ask_decision_vault_with_client(
+            client,
+            "What is the topic of this meeting?",
+            [],
+            context={
+                "executive_summary": "The meeting covered launch readiness.",
+                "source_text": "--- SOURCE FILE: meeting_notes.txt ---\nLaunch readiness notes",
+            },
+        )
+
+        prompt = client.models.last_kwargs["contents"]
+
+        self.assertIn("Meeting Context", prompt)
+        self.assertIn("The meeting covered launch readiness.", prompt)
+        self.assertIn("Launch readiness notes", prompt)
+
+    def test_ask_prompt_prioritizes_reviewed_records_before_raw_source(self):
+        client = CapturingClient(
+            """
+            {
+              "answer_status": "Answered",
+              "answer_source": "Reviewed Records",
+              "confidence": "High",
+              "direct_answer": "The launch was delayed.",
+              "key_points": [],
+              "supporting_records": [],
+              "source_references": [],
+              "information_gaps": [],
+              "recommended_next_steps": []
+            }
+            """
+        )
+
+        ask_decision_vault_with_client(
+            client,
+            "What happened with launch?",
+            [{"decision": "Delay launch", "source_evidence": ["Launch delayed"]}],
+            context={"source_text": "Raw notes about the launch delay."},
+        )
+
+        prompt = client.models.last_kwargs["contents"]
+
+        self.assertIn("Use reviewed decision records first", prompt)
+        self.assertIn("Use raw source text as backup", prompt)
+        self.assertIn('"answer_source": "Reviewed Records / Source Text / Both / Not Available"', prompt)
+        self.assertIn("Raw notes about the launch delay.", prompt)
+
+    def test_ask_normalizes_missing_optional_answer_fields(self):
+        client = FakeClient(
+            """
+            {
+              "answer_status": "Answered",
+              "direct_answer": "Launch readiness was the topic."
+            }
+            """
+        )
+
+        answer = ask_decision_vault_with_client(client, "Topic?", [])
+
+        self.assertEqual(answer["answer_source"], "Not Available")
+        self.assertEqual(answer["confidence"], "Medium")
+        self.assertEqual(answer["source_references"], [])
+        self.assertEqual(answer["key_points"], [])
 
 
 if __name__ == "__main__":

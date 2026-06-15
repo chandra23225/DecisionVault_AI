@@ -112,17 +112,78 @@ def extract_decisions_with_client(client, text):
         raise GeminiJSONError(str(e), raw_output) from e
 
 
-def ask_decision_vault_with_client(client, question, decision_records):
+def build_ask_context_text(context):
+    context = context or {}
+    executive_summary = str(context.get("executive_summary") or "").strip()
+    source_text = str(context.get("source_text") or "").strip()
+
+    if not executive_summary and not source_text:
+        return "No additional meeting context was provided."
+
+    parts = []
+
+    if executive_summary:
+        parts.append(f"Executive summary:\n{executive_summary}")
+
+    if source_text:
+        parts.append(f"Uploaded source text:\n{source_text[:12000]}")
+
+    return "\n\n".join(parts)
+
+
+def normalize_ask_answer(answer):
+    answer = answer or {}
+
+    normalized = {
+        "answer_status": answer.get("answer_status") or "Answered",
+        "answer_source": answer.get("answer_source") or "Not Available",
+        "confidence": answer.get("confidence") or "Medium",
+        "direct_answer": answer.get("direct_answer") or "",
+        "key_points": answer.get("key_points") or [],
+        "supporting_records": answer.get("supporting_records") or [],
+        "source_references": answer.get("source_references") or [],
+        "information_gaps": answer.get("information_gaps") or [],
+        "recommended_next_steps": answer.get("recommended_next_steps") or [],
+    }
+
+    for list_field in [
+        "key_points",
+        "supporting_records",
+        "source_references",
+        "information_gaps",
+        "recommended_next_steps",
+    ]:
+        if not isinstance(normalized[list_field], list):
+            normalized[list_field] = [normalized[list_field]]
+
+    return normalized
+
+
+def ask_decision_vault_with_client(client, question, decision_records, context=None):
     prompt = f"""
 You are DecisionVault AI.
 
-You answer questions using ONLY the provided decision records.
-Do not invent information that is not in the records.
+You answer questions using ONLY the reviewed decision records and meeting context below.
+Do not invent information that is not in those inputs.
+
+Answering strategy:
+1. Use reviewed decision records first when they contain the answer.
+2. Use raw source text as backup for details not captured in reviewed records.
+3. Use both when the best answer needs reviewed decisions plus meeting/source context.
+4. If the answer is not present in either place, say it is not available.
+5. Be useful for broad questions, including topic, summary, timeline, participants,
+   owners, risks, approvals, blockers, follow-ups, open questions, and evidence.
+
+Use the meeting context for broad questions about the meeting, such as its topic,
+summary, source material, or overall discussion. Use the decision records for
+questions about decisions, owners, approvals, workflows, evidence, and follow-ups.
 
 Return ONLY valid JSON in this exact format:
 
 {{
   "answer_status": "Answered / Partially Answered / Not Available",
+  "answer_source": "Reviewed Records / Source Text / Both / Not Available",
+  "confidence": "High / Medium / Low",
   "direct_answer": "A clear executive-ready answer in 2-4 sentences.",
   "key_points": ["short point", "short point"],
   "supporting_records": [
@@ -133,16 +194,21 @@ Return ONLY valid JSON in this exact format:
       "evidence": ["source evidence or reason from the record"]
     }}
   ],
+  "source_references": ["short quote or source detail from the raw text or summary"],
   "information_gaps": ["missing context, if any"],
   "recommended_next_steps": ["practical next step, if any"]
 }}
 
 If the answer is not available, set answer_status to "Not Available",
 direct_answer to "That information is not available in the current decision memory.",
-and explain what is missing in information_gaps.
+answer_source to "Not Available", confidence to "Low", and explain what is missing
+in information_gaps.
 
-Decision Records:
+Reviewed Decision Records:
 {json.dumps(decision_records, indent=2)}
+
+Meeting Context:
+{build_ask_context_text(context)}
 
 User Question:
 {question}
@@ -164,13 +230,16 @@ Give a clear, concise answer.
     raw_output = response.text or ""
 
     try:
-        return extract_json_from_response(raw_output)
+        return normalize_ask_answer(extract_json_from_response(raw_output))
     except json.JSONDecodeError:
-        return {
+        return normalize_ask_answer({
             "answer_status": "Answered",
+            "answer_source": "Both",
+            "confidence": "Medium",
             "direct_answer": raw_output,
             "key_points": [],
             "supporting_records": [],
+            "source_references": [],
             "information_gaps": [],
             "recommended_next_steps": [],
-        }
+        })

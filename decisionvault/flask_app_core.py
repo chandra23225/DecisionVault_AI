@@ -263,7 +263,16 @@ def ask_question():
         return redirect(url_for("ask_page"))
 
     try:
-        current_state["answer"] = ask_decision_vault_with_client(get_client(), question, records)
+        result = current_state.get("result") or {}
+        current_state["answer"] = ask_decision_vault_with_client(
+            get_client(),
+            question,
+            records,
+            context={
+                "executive_summary": result.get("executive_summary", ""),
+                "source_text": current_state.get("combined_text", ""),
+            },
+        )
         current_state["last_question"] = question
         current_state["message"] = ""
         current_state["error"] = ""
